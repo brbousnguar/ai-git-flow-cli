@@ -1,0 +1,96 @@
+{
+  "provider": "cloud",
+  "local": {
+    "default": "qwen2.5:7b-instruct",
+    "models": {
+      "qwen2.5-coder:7b": "Fast default for code + diffs + scripts",
+      "mistral-nemo:12b": "Slower, better reasoning / complex changes",
+      "llama3.1:8b": "Great for release notes, summaries, human-friendly text",
+      "qwen2.5:7b-instruct": "Good general assistant; clean changelogs + explanations",
+      "phi3.5:latest": "Ultra-fast commit messages / short tasks",
+      "qwen2.5-coder:14b": "Higher quality code help; slower on CPU",
+      "nomic-embed-text": "Embeddings for search/RAG over repo/logs (optional)"
+    },
+    "baseURL": "http://localhost:11434/v1"
+  },
+  "cloud": {
+    "model": "gpt-5.1-codex-mini",
+    "ranking": [
+      "gpt-5.1-codex-mini",
+      "gpt-5-mini",
+      "gpt-4o-mini",
+      "gpt-4.1-mini",
+      "gpt-5-nano",
+      "gpt-4.1-nano",
+      "gpt-5",
+      "gpt-5.1",
+      "gpt-4.1",
+      "gpt-4"
+    ],
+    "pricing": {
+      "gpt-5.1-codex-mini": {
+        "inputPer1M": 0.25,
+        "cachedInputPer1M": 0.025,
+        "outputPer1M": 2
+      },
+      "gpt-5-mini": {
+        "inputPer1M": 0.25,
+        "cachedInputPer1M": 0.025,
+        "outputPer1M": 2
+      },
+      "gpt-4o-mini": {
+        "inputPer1M": 0.15,
+        "cachedInputPer1M": 0.075,
+        "outputPer1M": 0.6
+      },
+      "gpt-4.1-mini": {
+        "inputPer1M": 0.4,
+        "cachedInputPer1M": 0.1,
+        "outputPer1M": 1.6
+      },
+      "gpt-5-nano": {
+        "inputPer1M": 0.05,
+        "cachedInputPer1M": 0.005,
+        "outputPer1M": 0.4
+      },
+      "gpt-4.1-nano": {
+        "inputPer1M": 0.1,
+        "cachedInputPer1M": 0.025,
+        "outputPer1M": 0.4
+      },
+      "gpt-5": {
+        "inputPer1M": 1.25,
+        "cachedInputPer1M": 0.125,
+        "outputPer1M": 10
+      },
+      "gpt-5.1": {
+        "inputPer1M": 1.25,
+        "cachedInputPer1M": 0.125,
+        "outputPer1M": 10
+      },
+      "gpt-4.1": {
+        "inputPer1M": 2,
+        "cachedInputPer1M": 0.5,
+        "outputPer1M": 8
+      },
+      "gpt-4": {
+        "inputPer1M": 30,
+        "outputPer1M": 60
+      },
+      "gpt-5.2": {
+        "inputPer1M": 1.75,
+        "cachedInputPer1M": 0.175,
+        "outputPer1M": 14
+      },
+      "o4-mini": {
+        "inputPer1M": 4,
+        "cachedInputPer1M": 1,
+        "outputPer1M": 16
+      }
+    }
+  },
+  "muleLogs": {
+    "defaultPath": "D:\\IDE\\AnypointStudio\\plugins\\org.mule.tooling.server.4.10.ee_7.22.0.202511192101\\mule\\logs",
+    "defaultLines": 200
+  }
+}
