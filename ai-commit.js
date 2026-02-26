@@ -180,6 +180,38 @@ const effectiveDiff = provider === "local" && diff.length > LOCAL_DIFF_CHAR_LIMI
   ? `${diff.slice(0, LOCAL_DIFF_CHAR_LIMIT)}\n\n[...diff truncated for local model context...]`
   : diff;
 
+function tokenize(text) {
+  if (!text) return [];
+  return String(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(/[\s-]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3);
+}
+
+function scoreVariantAlignment(variant, guidanceTokens) {
+  if (!variant || guidanceTokens.length === 0) return 0;
+  const combined = `${variant.commit || ""} ${variant.branch || ""}`.toLowerCase();
+  let score = 0;
+  for (const token of guidanceTokens) {
+    if (combined.includes(token)) score += 1;
+  }
+  return score;
+}
+
+function prioritizeVariantsByDeveloperMessage(variants) {
+  if (!developerMessage || !Array.isArray(variants) || variants.length <= 1) return variants;
+  const guidanceTokens = [...new Set(tokenize(developerMessage))];
+  if (guidanceTokens.length === 0) return variants;
+
+  return [...variants].sort((a, b) => {
+    const bScore = scoreVariantAlignment(b, guidanceTokens);
+    const aScore = scoreVariantAlignment(a, guidanceTokens);
+    return bScore - aScore;
+  });
+}
+
 // Prompt
 const prompt = `
 You analyze code changes and generate 4 different variants of:
@@ -201,8 +233,13 @@ Rules:
   * Use labels that best match the actual code changes
 - Be concise and descriptive
 - No emojis
-- IMPORTANT: Analyze the actual code diff to understand what changed
+- PRIORITY ORDER:
+  1) Developer Context is PRIMARY intent and wording source for commit/branch descriptions.
+  2) Code diff is SECONDARY for validation and scope refinement.
+  3) If context and diff conflict, keep the Developer Context intent and only adjust technical nouns for correctness.
 ${developerMessage ? `- Developer Context: "${developerMessage}"
+  * Reuse concrete terms from this context in BOTH commit description and branch description.
+  * Ensure at least 2 key nouns/phrases from this context appear in each generated variant.
   * CRITICAL: If the context contains keywords like "fix", "bug", "bugfix" -> use ONLY "fix" type for ALL 4 variants
   * If it contains "feature", "add", "new" -> use ONLY "feat" type for ALL 4 variants
   * If it contains "refactor", "restructure" -> use ONLY "refactor" type for ALL 4 variants
@@ -234,12 +271,12 @@ ${developerMessage ? `- Developer Context: "${developerMessage}"
   Branch: [branch name]
   Labels: [label1,label2]
 
-${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${developerMessage ? `Developer Context (for guidance only): ${developerMessage}\n\n` : ""}Code Changes:
+${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${developerMessage ? `Developer Context (primary intent): ${developerMessage}\n\n` : ""}Code Changes:
 ---
 ${effectiveDiff}
 ---
 
-Analyze the code diff above and generate 4 variants of commit message, branch name, and labels based on what actually changed:
+Generate 4 variants using Developer Context as primary intent and the code diff as validation:
 `;
 
 function parseVariants(outputText) {
@@ -335,11 +372,12 @@ Rules:
 - branch format: type/ticket-kebab-description
 - types allowed: feat, fix, refactor, chore, docs, test, perf, hotfix
 - labels: comma-separated from bug, documentation, enhancement, duplicate, help wanted, good first issue, question, wontfix
+${developerMessage ? `- Developer Context is PRIMARY intent; reuse its key wording in commit and branch description` : ""}
 
 JSON schema:
 [{"commit":"...","branch":"...","labels":"label1,label2"}]
 
-${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${developerMessage ? `Developer Context: ${developerMessage}\n\n` : ""}Code Changes:
+${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${developerMessage ? `Developer Context (primary intent): ${developerMessage}\n\n` : ""}Code Changes:
 ---
 ${diffContent}
 ---
@@ -377,6 +415,8 @@ async function generateVariants() {
     printTokenUsage(recovery.usage, { provider, modelName, config });
     results = parseJsonVariants(recovery.text);
   }
+
+  results = prioritizeVariantsByDeveloperMessage(results);
 
   if (results.length === 0 && provider === "local") {
     console.log("⚠️ Model output format was not parseable. Try a stronger local model or smaller staged diff.");
