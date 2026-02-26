@@ -125,7 +125,12 @@ node .gpt-tools/ai-commit.js -t SFSC-1573 -m "new feature, implement SSO authent
 node .gpt-tools/ai-commit.js -t JIRA-456 -m "bugfix, resolve memory leak in cache"
 
 # With custom labels
-node .gpt-tools/ai-commit.js -l "bug,urgent" -m "hotfix, critical security patch"
+node .gpt-tools/ai-commit.js -l "bug,enhancement" -m "hotfix, critical security patch"
+
+# Exclude labels (negative prompt)
+node .gpt-tools/ai-commit.js -m "update RAML customer request type" -n bug
+node .gpt-tools/ai-commit.js -m "update RAML customer request type" --exclude-label bug
+node .gpt-tools/ai-commit.js -m "update RAML customer request type" -n -bug
 ```
 
 **Command-Line Options:**
@@ -133,6 +138,19 @@ node .gpt-tools/ai-commit.js -l "bug,urgent" -m "hotfix, critical security patch
 - `-m, --message <text>` - Context to guide branch naming and commit message generation
   - Examples: "new feature, add customer endpoint", "bugfix, fix login timeout", "refactor authentication"
 - `-l, --labels <labels>` - Custom GitHub labels (comma-separated)
+- `-n, --exclude-label <label>` - Exclude a label from AI suggestions and PR creation
+- `--exclude-labels <label>` - Alias of `--exclude-label`
+- `-bug`, `-documentation`, `-enhancement`, etc. - Shorthand exclusion flags
+
+**Supported labels:**
+- `bug`
+- `documentation`
+- `enhancement`
+- `duplicate`
+- `help wanted`
+- `good first issue`
+- `question`
+- `wontfix`
 
 **Tips for Using Context (-m flag):**
 - Start with the type: "new feature", "bugfix", "refactor", "hotfix"
@@ -145,6 +163,9 @@ node .gpt-tools/ai-commit.js -l "bug,urgent" -m "hotfix, critical security patch
 
 **Workflow:**
 - Always runs full workflow: rename branch, commit, push, and create PR
+
+**Console output note:**
+- Uses ASCII/professional prefixes (`INFO:`, `OK:`, `WARN:`, `ERROR:`) for Git Bash compatibility.
 
 **Output:**
 ```

@@ -17,6 +17,17 @@ let ticketNumber = null;
 let developerMessage = null;
 let labels = null;
 let debug = false;
+const excludedLabels = new Set();
+const ALLOWED_LABELS = new Set([
+  "bug",
+  "documentation",
+  "enhancement",
+  "duplicate",
+  "help wanted",
+  "good first issue",
+  "question",
+  "wontfix",
+]);
 
 function printSignatureBanner() {
   const banner = [
@@ -41,8 +52,43 @@ function parseLabelList(rawLabels) {
     .filter((label) => label.length > 0);
 }
 
+function normalizeLabelName(label) {
+  const cleaned = String(label || "")
+    .toLowerCase()
+    .trim()
+    .replace(/^\[+/, "")
+    .replace(/\]+$/, "")
+    .replace(/^"+|"+$/g, "")
+    .replace(/^'+|'+$/g, "")
+    .replace(/^-+/, "")
+    .replace(/\s+/g, " ");
+
+  if (!cleaned) return "";
+  if (cleaned === "doc" || cleaned === "docs") return "documentation";
+  if (cleaned === "feature" || cleaned === "enhance") return "enhancement";
+  if (cleaned === "bugs" || cleaned === "defect") return "bug";
+  if (cleaned === "wont-fix") return "wontfix";
+  if (cleaned === "good-first-issue") return "good first issue";
+  if (cleaned === "help-wanted") return "help wanted";
+  return cleaned;
+}
+
 function normalizeLabels(rawLabels) {
-  return parseLabelList(rawLabels).join(",");
+  return parseLabelList(rawLabels)
+    .map((label) => normalizeLabelName(label))
+    .filter((label) => ALLOWED_LABELS.has(label))
+    .join(",");
+}
+
+function filterExcludedLabels(rawLabels) {
+  const normalized = normalizeLabels(rawLabels);
+  if (!normalized) return "";
+
+  return normalized
+    .split(",")
+    .map((label) => label.trim())
+    .filter((label) => label && !excludedLabels.has(label))
+    .join(",");
 }
 
 function buildGhLabelArgs(rawLabels) {
@@ -61,9 +107,28 @@ for (let i = 0; i < args.length; i++) {
   } else if ((args[i] === "-l" || args[i] === "--labels") && args[i + 1]) {
     labels = normalizeLabels(args[i + 1]);
     i++;
+  } else if ((args[i] === "-n" || args[i] === "--exclude-label" || args[i] === "--exclude-labels") && args[i + 1]) {
+    const excluded = normalizeLabelName(args[i + 1]);
+    if (ALLOWED_LABELS.has(excluded)) {
+      excludedLabels.add(excluded);
+    }
+    i++;
+  } else if (
+    /^-[a-z][a-z-]*$/i.test(args[i]) &&
+    !["-t", "--ticket", "-m", "--message", "-l", "--labels", "-d", "--debug", "-n", "--exclude-label", "--exclude-labels"].includes(args[i])
+  ) {
+    // Shorthand negative labels: -bug, -documentation, -enhancement, etc.
+    const excluded = normalizeLabelName(args[i]);
+    if (ALLOWED_LABELS.has(excluded)) {
+      excludedLabels.add(excluded);
+    }
   } else if (args[i] === "-d" || args[i] === "--debug") {
     debug = true;
   }
+}
+
+if (labels) {
+  labels = filterExcludedLabels(labels);
 }
 
 function detectForcedType(context) {
@@ -169,6 +234,7 @@ Follow strict git naming/message style.
 - Never end branch description with filler words: and, or, to, for, with, by, of, in, on, at, from, via
 - Commit format: ${ticketNumber ? `[${ticketNumber}] ` : ""}type(scope): short description
 - Keep labels as comma-separated values from: bug, documentation, enhancement, duplicate, help wanted, good first issue, question, wontfix
+- Never use excluded labels: ${excludedLabels.size > 0 ? Array.from(excludedLabels).join(", ") : "(none)"}
 - Output MUST follow the exact requested template.
 `.trim();
 const effectiveSystemMessage = provider === "local" ? localCompactSystemMessage : styleGuideSystemMessage;
@@ -243,6 +309,7 @@ Rules:
   * documentation: Improvements or additions to documentation
   * enhancement: New feature or request
   * Use labels that best match the actual code changes
+${excludedLabels.size > 0 ? `  * NEVER use excluded labels: ${Array.from(excludedLabels).join(", ")}` : ""}
 - Be concise and descriptive
 - No emojis
 - PRIORITY ORDER:
@@ -303,7 +370,7 @@ function parseVariants(outputText) {
 
       let processedLabels = "";
       if (labelsMatch) {
-        processedLabels = normalizeLabels(labelsMatch[1]);
+        processedLabels = filterExcludedLabels(labelsMatch[1]);
       }
 
       if (commitMatch && branchMatch) {
@@ -333,7 +400,7 @@ function parseVariants(outputText) {
     relaxedResults.push({
       commit: match[1].trim(),
       branch: constrainBranchLength(normalizeBranchType(match[2], forcedType)),
-      labels: normalizeLabels(processedLabels)
+      labels: filterExcludedLabels(processedLabels)
     });
   }
 
@@ -365,7 +432,7 @@ function parseJsonVariants(outputText) {
       }))
       .map((item) => ({
         ...item,
-        labels: normalizeLabels(item.labels),
+        labels: filterExcludedLabels(item.labels),
       }))
       .filter((item) => item.commit && item.branch)
       .slice(0, 4);
@@ -384,6 +451,7 @@ Rules:
 - branch format: type/ticket-kebab-description
 - types allowed: feat, fix, refactor, chore, docs, test, perf, hotfix
 - labels: comma-separated from bug, documentation, enhancement, duplicate, help wanted, good first issue, question, wontfix
+${excludedLabels.size > 0 ? `- NEVER use excluded labels: ${Array.from(excludedLabels).join(", ")}` : ""}
 ${developerMessage ? `- Developer Context is PRIMARY intent; reuse its key wording in commit and branch description` : ""}
 
 JSON schema:
@@ -508,6 +576,9 @@ async function run() {
   
   printSignatureBanner();
   console.log(`## INFO: Using model: ${modelName} (${provider})`);
+  if (excludedLabels.size > 0) {
+    console.log(`## INFO: Excluding labels: ${Array.from(excludedLabels).join(", ")}`);
+  }
   
   try {
     console.log("\n## Workflow: Rename branch + Commit + Create PR\n");
@@ -593,7 +664,7 @@ async function run() {
         let prCommand = "gh pr create --base develop --fill --assignee brahimbousnguar";
         
         // Use AI-selected labels or command-line provided labels
-        const finalLabels = labels || selectedLabels;
+        const finalLabels = filterExcludedLabels(labels || selectedLabels);
         if (finalLabels) {
           prCommand += buildGhLabelArgs(finalLabels);
         }
