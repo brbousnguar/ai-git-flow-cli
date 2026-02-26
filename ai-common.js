@@ -4,6 +4,62 @@ import { fileURLToPath } from "url";
 import path from "path";
 import OpenAI from "openai";
 
+function normalizeCliLine(line, level = "log") {
+  const text = String(line ?? "");
+  if (text.length === 0) return text;
+
+  const normalizeSingle = (raw) => {
+    if (raw.trim() === "") return raw;
+
+    let normalized = raw
+      .replace(/ðŸ”„|🔄/g, "INFO:")
+      .replace(/â„¹ï¸|ℹ️/g, "INFO:")
+      .replace(/âš ï¸|⚠️/g, "WARN:")
+      .replace(/âŒ|❌/g, "ERROR:")
+      .replace(/âœ…|✅/g, "OK:")
+      .replace(/ðŸ¤–|🤖/g, "INFO:")
+      .replace(/ðŸ“¦|📦/g, "")
+      .replace(/â±ï¸|⏱️/g, "INFO:")
+      .replace(/ðŸ“¥|📥|ðŸ“¤|📤/g, "INFO:")
+      .replace(/ðŸ“‹|📋|🏷️/g, "INFO:")
+      .replace(/ðŸš€|🚀|ðŸ”—|🔗/g, "INFO:")
+      .replace(/ðŸ”|🔍|ðŸ“‚|📂|ðŸ“|📝|ðŸ“Š|📊|ðŸ“„|📄|ðŸ•’|🕒|â³|⏳/g, "INFO:")
+      .replace(/â†’|→/g, "->")
+      .trim();
+
+    if (!/^((INFO|WARN|ERROR|OK|DEBUG):|##\s)/.test(normalized)) {
+      if (level === "error") normalized = `ERROR: ${normalized}`;
+      else if (level === "warn") normalized = `WARN: ${normalized}`;
+    }
+
+    if (!normalized.startsWith("## ")) {
+      normalized = `## ${normalized}`;
+    }
+    return normalized;
+  };
+
+  return text
+    .split(/\r?\n/)
+    .map((linePart) => normalizeSingle(linePart))
+    .join("\n");
+}
+
+export function setupCliConsole() {
+  if (globalThis.__cliConsoleNormalized) return;
+  globalThis.__cliConsoleNormalized = true;
+
+  const rawLog = console.log.bind(console);
+  const rawWarn = console.warn.bind(console);
+  const rawError = console.error.bind(console);
+
+  const formatArgs = (args, level) =>
+    args.map((arg, idx) => (idx === 0 && typeof arg === "string" ? normalizeCliLine(arg, level) : arg));
+
+  console.log = (...args) => rawLog(...formatArgs(args, "log"));
+  console.warn = (...args) => rawWarn(...formatArgs(args, "warn"));
+  console.error = (...args) => rawError(...formatArgs(args, "error"));
+}
+
 export function loadConfigAndEnv(metaUrl) {
   const __filename = fileURLToPath(metaUrl);
   const __dirname = path.dirname(__filename);
@@ -20,8 +76,8 @@ export function initOpenAIClient(config, __dirname, modelOverrideArg) {
 
   if (provider === "cloud") {
     if (!process.env.OPENAI_API_KEY) {
-      console.error("ERROR: OpenAI API key not set in .env file");
-      console.error("   Add OPENAI_API_KEY to your .env file");
+      console.error("## ERROR: OpenAI API key not set in .env file");
+      console.error("## INFO: Add OPENAI_API_KEY to your .env file");
       process.exit(1);
     }
     client = new OpenAI({
@@ -80,22 +136,22 @@ export async function generateText({
 }) {
   if (debug) {
     const title = debugLabel ? ` [${debugLabel}]` : "";
-    console.log(`\n--- LLM Request${title} ---`);
-    console.log(`provider: ${provider}`);
-    console.log(`model: ${modelName}`);
+    console.log(`\n## DEBUG: --- LLM Request${title} ---`);
+    console.log(`## DEBUG: provider: ${provider}`);
+    console.log(`## DEBUG: model: ${modelName}`);
     if (Number.isFinite(temperature)) {
-      console.log(`temperature: ${temperature}`);
+      console.log(`## DEBUG: temperature: ${temperature}`);
     }
     if (Number.isFinite(maxOutputTokens)) {
-      console.log(`maxOutputTokens: ${maxOutputTokens}`);
+      console.log(`## DEBUG: maxOutputTokens: ${maxOutputTokens}`);
     }
     if (systemPrompt) {
-      console.log("\n[system prompt]");
+      console.log("\n## DEBUG: [system prompt]");
       console.log(systemPrompt);
     }
-    console.log("\n[user prompt]");
+    console.log("\n## DEBUG: [user prompt]");
     console.log(userPrompt);
-    console.log("--- End LLM Request ---\n");
+    console.log("## DEBUG: --- End LLM Request ---\n");
   }
 
   if (provider === "cloud") {
@@ -188,14 +244,14 @@ export function printTokenUsage(usage, { provider, modelName, config }) {
   const cachedPromptTokens = usage?.prompt_tokens_details?.cached_tokens || 0;
   const nonCachedPromptTokens = Math.max(promptTokens - cachedPromptTokens, 0);
 
-  console.log(`\nINFO: Token usage: prompt=${promptTokens}, completion=${completionTokens}, total=${totalTokens}`);
+  console.log(`\n## INFO: Token usage: prompt=${promptTokens}, completion=${completionTokens}, total=${totalTokens}`);
 
   if (provider !== "cloud") return;
 
   const pricing = getCloudModelPricing(config, modelName);
   if (!pricing) {
-    console.log(`INFO: No pricing configured for model '${modelName}'.`);
-    console.log("   Add it under cloud.pricing in config.json (inputPer1M/outputPer1M, optional cachedInputPer1M).");
+    console.log(`## WARN: No pricing configured for model '${modelName}'.`);
+    console.log("## INFO: Add it under cloud.pricing in config.json (inputPer1M/outputPer1M, optional cachedInputPer1M).");
     return;
   }
 
@@ -210,12 +266,12 @@ export function printTokenUsage(usage, { provider, modelName, config }) {
   const pricingText = Number.isFinite(pricing.cachedInputPer1M)
     ? `input=${formatRate(pricing.inputPer1M)}, cached_input=${formatRate(pricing.cachedInputPer1M)}, output=${formatRate(pricing.outputPer1M)}`
     : `input=${formatRate(pricing.inputPer1M)}, output=${formatRate(pricing.outputPer1M)}`;
-  console.log(`INFO: Model pricing (${modelName}): ${pricingText}`);
+  console.log(`## INFO: Model pricing (${modelName}): ${pricingText}`);
   if (cachedPromptTokens > 0 || Number.isFinite(pricing.cachedInputPer1M)) {
     console.log(
-      `INFO: Estimated request cost: ${formatUsd(totalCost)} (input=${formatUsd(inputCost)}, cached_input=${formatUsd(cachedInputCost)}, output=${formatUsd(outputCost)})`
+      `## INFO: Estimated request cost: ${formatUsd(totalCost)} (input=${formatUsd(inputCost)}, cached_input=${formatUsd(cachedInputCost)}, output=${formatUsd(outputCost)})`
     );
   } else {
-    console.log(`INFO: Estimated request cost: ${formatUsd(totalCost)} (input=${formatUsd(inputCost)}, output=${formatUsd(outputCost)})`);
+    console.log(`## INFO: Estimated request cost: ${formatUsd(totalCost)} (input=${formatUsd(inputCost)}, output=${formatUsd(outputCost)})`);
   }
 }

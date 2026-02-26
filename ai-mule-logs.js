@@ -6,15 +6,16 @@ import { fileURLToPath } from "url";
 import path from "path";
 import { execSync } from "child_process";
 import dotenv from "dotenv";
-import { printTokenUsage, generateText } from "./ai-common.js";
+import { printTokenUsage, generateText, setupCliConsole } from "./ai-common.js";
 
 // Load config
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Load environment variables from script directory
-dotenv.config({ path: path.join(__dirname, ".env"), override: true });
+dotenv.config({ path: path.join(__dirname, ".env"), override: true, quiet: true });
 const config = JSON.parse(readFileSync(path.join(__dirname, "config.json"), "utf8"));
+setupCliConsole();
 
 // Configure client based on provider
 let client;

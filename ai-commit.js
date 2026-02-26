@@ -4,12 +4,13 @@ import { execSync } from "child_process";
 import { readFileSync } from "fs";
 import * as readline from "readline";
 import path from "path";
-import { loadConfigAndEnv, initOpenAIClient, printTokenUsage, generateText } from "./ai-common.js";
+import { loadConfigAndEnv, initOpenAIClient, printTokenUsage, generateText, setupCliConsole } from "./ai-common.js";
 
 // Load config and env
 const { config, __dirname } = loadConfigAndEnv(import.meta.url);
 // Configure client based on provider
 const { client, modelName, provider } = initOpenAIClient(config, __dirname);
+setupCliConsole();
 
 // Parse command-line arguments for ticket number
 const args = process.argv.slice(2);
@@ -216,7 +217,7 @@ function loadGuideFile(fileName) {
   try {
     return readFileSync(path.join(__dirname, fileName), "utf8").trim();
   } catch (error) {
-    console.warn(`WARN: Could not load ${fileName}: ${error.message}`);
+    console.warn(`## WARN: Could not load ${fileName}: ${error.message}`);
     return "";
   }
 }
@@ -244,12 +245,12 @@ let diff = "";
 try {
   diff = execSync("git diff --cached", { encoding: "utf8" });
 } catch {
-  console.error("ERROR: Failed to read git diff");
+  console.error("## ERROR: Failed to read git diff");
   process.exit(1);
 }
 
 if (!diff.trim()) {
-  console.error("ERROR: No staged changes. Run: git add <files>");
+  console.error("## ERROR: No staged changes. Run: git add <files>");
   process.exit(1);
 }
 
@@ -288,6 +289,16 @@ function prioritizeVariantsByDeveloperMessage(variants) {
     const aScore = scoreVariantAlignment(a, guidanceTokens);
     return bScore - aScore;
   });
+}
+
+function formatDurationShort(secondsValue) {
+  const totalSeconds = Math.max(0, Math.round(Number(secondsValue) || 0));
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds}s`;
 }
 
 // Prompt
@@ -499,7 +510,7 @@ async function generateVariants() {
   results = prioritizeVariantsByDeveloperMessage(results);
 
   if (results.length === 0 && provider === "local") {
-    console.log("WARN: Model output format was not parseable. Try a stronger local model or smaller staged diff.");
+    console.log("## WARN: Model output format was not parseable. Try a stronger local model or smaller staged diff.");
   }
 
   return { results, generationTime: genElapsed };
@@ -520,7 +531,7 @@ async function askQuestion(query) {
 }
 
 async function selectCommitMessage(variants, generationTime) {
-  console.log(`\n## Commit message and label variants (generated in ${generationTime}s):\n`);
+  console.log(`\n## Commit message and label variants (generated in ${formatDurationShort(generationTime)}):\n`);
   variants.forEach((v, i) => {
     console.log(`${i + 1}. ${v.commit}`);
     if (v.labels) {
@@ -544,12 +555,12 @@ async function selectCommitMessage(variants, generationTime) {
       };
     }
     
-    console.log("ERROR: Invalid choice. Please enter 1-4 or 'n'");
+    console.log("## ERROR: Invalid choice. Please enter 1-4 or 'n'");
   }
 }
 
 async function selectBranchName(variants, generationTime) {
-  console.log(`\n## Branch name variants (generated in ${generationTime}s):\n`);
+  console.log(`\n## Branch name variants (generated in ${formatDurationShort(generationTime)}):\n`);
   variants.forEach((v, i) => {
     console.log(`${i + 1}. ${v.branch}`);
   });
@@ -567,7 +578,7 @@ async function selectBranchName(variants, generationTime) {
       return variants[choice - 1].branch;
     }
     
-    console.log("ERROR: Invalid choice. Please enter 1-4 or 'n'");
+    console.log("## ERROR: Invalid choice. Please enter 1-4 or 'n'");
   }
 }
 
@@ -591,26 +602,26 @@ async function run() {
       while (!selectedBranch) {
         const { results: variants, generationTime } = await generateVariants();
         if (variants.length === 0) {
-          console.error("ERROR: Failed to generate variants");
+          console.error("## ERROR: Failed to generate variants");
           process.exit(1);
         }
         
         selectedBranch = await selectBranchName(variants, generationTime);
         
         if (!selectedBranch) {
-          console.log("\nINFO: Generating new variants...\n");
+          console.log("\n## INFO: Generating new variants...\n");
         }
       }
       
       // Step 2: Rename branch
-      console.log(`\nOK: Selected branch: ${selectedBranch}`);
-      console.log("\nINFO: Renaming branch...");
+      console.log(`\n## OK: Selected branch: ${selectedBranch}`);
+      console.log("\n## INFO: Renaming branch...");
       
       try {
         execSync(`git branch -m ${selectedBranch}`, { stdio: "inherit" });
-        console.log("OK: Branch renamed successfully");
+        console.log("## OK: Branch renamed successfully");
       } catch (error) {
-        console.error("ERROR: Branch rename failed:", error.message);
+        console.error("## ERROR: Branch rename failed:", error.message);
         process.exit(1);
       }
 
@@ -618,14 +629,14 @@ async function run() {
     while (!selectedCommit) {
       const { results: variants, generationTime } = await generateVariants();
       if (variants.length === 0) {
-        console.error("ERROR: Failed to generate variants");
+        console.error("## ERROR: Failed to generate variants");
         process.exit(1);
       }
       
       const selection = await selectCommitMessage(variants, generationTime);
       
       if (!selection) {
-        console.log("\nINFO: Generating new variants...\n");
+        console.log("\n## INFO: Generating new variants...\n");
       } else {
         selectedCommit = selection.commit;
         selectedLabels = selection.labels;
@@ -633,33 +644,33 @@ async function run() {
     }
     
     // Step 4: Commit with selected message
-    console.log(`\nOK: Selected commit message: ${selectedCommit}`);
+    console.log(`\n## OK: Selected commit message: ${selectedCommit}`);
     if (selectedLabels) {
-      console.log(`Labels: ${selectedLabels}`);
+      console.log(`## INFO: Labels: ${selectedLabels}`);
     }
-    console.log("\nINFO: Creating commit...");
+    console.log("\n## INFO: Creating commit...");
     
     try {
       execSync(`git commit -m "${selectedCommit.replace(/"/g, '\\"')}"`, { stdio: "inherit" });
-      console.log("OK: Commit created successfully");
+      console.log("## OK: Commit created successfully");
     } catch (error) {
-      console.error("ERROR: Commit failed:", error.message);
+      console.error("## ERROR: Commit failed:", error.message);
       process.exit(1);
     }
     
     // Step 5 & 6: Push and create PR
       // Step 5: Push branch to remote
-      console.log("\nINFO: Pushing branch to remote...");
+      console.log("\n## INFO: Pushing branch to remote...");
       try {
         execSync(`git push -u origin ${selectedBranch}`, { stdio: "inherit" });
-        console.log("OK: Push completed successfully");
+        console.log("## OK: Push completed successfully");
       } catch (error) {
-        console.error("ERROR: Push failed:", error.message);
-        console.log("WARN: Continuing to create PR...");
+        console.error("## ERROR: Push failed:", error.message);
+        console.log("## WARN: Continuing to create PR...");
       }
       
       // Step 6: Create Pull Request
-      console.log("\nINFO: Creating pull request...");
+      console.log("\n## INFO: Creating pull request...");
       try {
         let prCommand = "gh pr create --base develop --fill --assignee brahimbousnguar";
         
@@ -670,24 +681,24 @@ async function run() {
         }
         
         execSync(prCommand, { stdio: "inherit" });
-        console.log("OK: Pull request created successfully");
+        console.log("## OK: Pull request created successfully");
       } catch (error) {
-        console.error("ERROR: PR creation failed:", error.message);
-        console.log("TIP: Make sure GitHub CLI (gh) is installed and authenticated");
+        console.error("## ERROR: PR creation failed:", error.message);
+        console.log("## INFO: Make sure GitHub CLI (gh) is installed and authenticated");
       }
 
     const elapsedSeconds = (Date.now() - startTime) / 1000;
     const timeStr = elapsedSeconds >= 60 
       ? `${Math.floor(elapsedSeconds / 60)}m ${(elapsedSeconds % 60).toFixed(2)}s`
       : `${elapsedSeconds.toFixed(2)}s`;
-    console.log(`\nINFO: Total time: ${timeStr}\n`);
+    console.log(`\n## INFO: Total time: ${timeStr}\n`);
     
   } catch (error) {
     if (error.code === "ECONNREFUSED") {
-      console.error("ERROR: Cannot connect to Ollama. Make sure it's running: ollama serve");
-      console.error(`   Then pull the model: ollama pull ${modelName}`);
+      console.error("## ERROR: Cannot connect to Ollama. Make sure it's running: ollama serve");
+      console.error(`## INFO: Then pull the model: ollama pull ${modelName}`);
     } else {
-      console.error("ERROR:", error.message);
+      console.error("## ERROR:", error.message);
     }
     process.exit(1);
   }
