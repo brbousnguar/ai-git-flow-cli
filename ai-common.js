@@ -20,7 +20,7 @@ export function initOpenAIClient(config, __dirname, modelOverrideArg) {
 
   if (provider === "cloud") {
     if (!process.env.OPENAI_API_KEY) {
-      console.error("❌ OpenAI API key not set in .env file");
+      console.error("ERROR: OpenAI API key not set in .env file");
       console.error("   Add OPENAI_API_KEY to your .env file");
       process.exit(1);
     }
@@ -188,13 +188,13 @@ export function printTokenUsage(usage, { provider, modelName, config }) {
   const cachedPromptTokens = usage?.prompt_tokens_details?.cached_tokens || 0;
   const nonCachedPromptTokens = Math.max(promptTokens - cachedPromptTokens, 0);
 
-  console.log(`\n📊 Token usage: prompt=${promptTokens}, completion=${completionTokens}, total=${totalTokens}`);
+  console.log(`\nINFO: Token usage: prompt=${promptTokens}, completion=${completionTokens}, total=${totalTokens}`);
 
   if (provider !== "cloud") return;
 
   const pricing = getCloudModelPricing(config, modelName);
   if (!pricing) {
-    console.log(`💵 No pricing configured for model '${modelName}'.`);
+    console.log(`INFO: No pricing configured for model '${modelName}'.`);
     console.log("   Add it under cloud.pricing in config.json (inputPer1M/outputPer1M, optional cachedInputPer1M).");
     return;
   }
@@ -210,12 +210,12 @@ export function printTokenUsage(usage, { provider, modelName, config }) {
   const pricingText = Number.isFinite(pricing.cachedInputPer1M)
     ? `input=${formatRate(pricing.inputPer1M)}, cached_input=${formatRate(pricing.cachedInputPer1M)}, output=${formatRate(pricing.outputPer1M)}`
     : `input=${formatRate(pricing.inputPer1M)}, output=${formatRate(pricing.outputPer1M)}`;
-  console.log(`💵 Model pricing (${modelName}): ${pricingText}`);
+  console.log(`INFO: Model pricing (${modelName}): ${pricingText}`);
   if (cachedPromptTokens > 0 || Number.isFinite(pricing.cachedInputPer1M)) {
     console.log(
-      `💵 Estimated request cost: ${formatUsd(totalCost)} (input=${formatUsd(inputCost)}, cached_input=${formatUsd(cachedInputCost)}, output=${formatUsd(outputCost)})`
+      `INFO: Estimated request cost: ${formatUsd(totalCost)} (input=${formatUsd(inputCost)}, cached_input=${formatUsd(cachedInputCost)}, output=${formatUsd(outputCost)})`
     );
   } else {
-    console.log(`💵 Estimated request cost: ${formatUsd(totalCost)} (input=${formatUsd(inputCost)}, output=${formatUsd(outputCost)})`);
+    console.log(`INFO: Estimated request cost: ${formatUsd(totalCost)} (input=${formatUsd(inputCost)}, output=${formatUsd(outputCost)})`);
   }
 }

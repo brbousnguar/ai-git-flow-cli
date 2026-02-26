@@ -18,6 +18,18 @@ let developerMessage = null;
 let labels = null;
 let debug = false;
 
+function printSignatureBanner() {
+  const banner = [
+    "##  ____  ____  ____   __   _  _  ____  __ _   ___  _  _   __   ____ ",
+    "## (  _ \\(  _ \\(  _ \\ /  \\ / )( \\/ ___)(  ( \\ / __)/ )( \\ / _\\ (  _ \\",
+    "##  ) _ ( )   / ) _ ((  O )) \\/ (\\___ \\/    /( (_ \\) \\/ (/    \\ )   /",
+    "## (____/(__\\_)(____/ \\__/ \\____/(____/\\_)__) \\___/\\____/\\_/\\_/(__\\_)",
+  ];
+  console.log("");
+  console.log(banner.join("\n"));
+  console.log("");
+}
+
 function parseLabelList(rawLabels) {
   if (!rawLabels) return [];
 
@@ -139,7 +151,7 @@ function loadGuideFile(fileName) {
   try {
     return readFileSync(path.join(__dirname, fileName), "utf8").trim();
   } catch (error) {
-    console.warn(`⚠️ Could not load ${fileName}: ${error.message}`);
+    console.warn(`WARN: Could not load ${fileName}: ${error.message}`);
     return "";
   }
 }
@@ -166,12 +178,12 @@ let diff = "";
 try {
   diff = execSync("git diff --cached", { encoding: "utf8" });
 } catch {
-  console.error("❌ Failed to read git diff");
+  console.error("ERROR: Failed to read git diff");
   process.exit(1);
 }
 
 if (!diff.trim()) {
-  console.error("❌ No staged changes. Run: git add <files>");
+  console.error("ERROR: No staged changes. Run: git add <files>");
   process.exit(1);
 }
 
@@ -419,7 +431,7 @@ async function generateVariants() {
   results = prioritizeVariantsByDeveloperMessage(results);
 
   if (results.length === 0 && provider === "local") {
-    console.log("⚠️ Model output format was not parseable. Try a stronger local model or smaller staged diff.");
+    console.log("WARN: Model output format was not parseable. Try a stronger local model or smaller staged diff.");
   }
 
   return { results, generationTime: genElapsed };
@@ -440,7 +452,7 @@ async function askQuestion(query) {
 }
 
 async function selectCommitMessage(variants, generationTime) {
-  console.log(`\n📝 Commit Message & Label Variants: (generated in ${generationTime}s)\n`);
+  console.log(`\n## Commit message and label variants (generated in ${generationTime}s):\n`);
   variants.forEach((v, i) => {
     console.log(`${i + 1}. ${v.commit}`);
     if (v.labels) {
@@ -464,12 +476,12 @@ async function selectCommitMessage(variants, generationTime) {
       };
     }
     
-    console.log("❌ Invalid choice. Please enter 1-4 or 'n'");
+    console.log("ERROR: Invalid choice. Please enter 1-4 or 'n'");
   }
 }
 
 async function selectBranchName(variants, generationTime) {
-  console.log(`\n🌿 Branch Name Variants: (generated in ${generationTime}s)\n`);
+  console.log(`\n## Branch name variants (generated in ${generationTime}s):\n`);
   variants.forEach((v, i) => {
     console.log(`${i + 1}. ${v.branch}`);
   });
@@ -487,17 +499,18 @@ async function selectBranchName(variants, generationTime) {
       return variants[choice - 1].branch;
     }
     
-    console.log("❌ Invalid choice. Please enter 1-4 or 'n'");
+    console.log("ERROR: Invalid choice. Please enter 1-4 or 'n'");
   }
 }
 
 async function run() {
   const startTime = Date.now();
   
-  console.log(`🤖 Using model: ${modelName} (${provider})`);
+  printSignatureBanner();
+  console.log(`## INFO: Using model: ${modelName} (${provider})`);
   
   try {
-    console.log("\nWorkflow: Rename branch + Commit + Create PR\n");
+    console.log("\n## Workflow: Rename branch + Commit + Create PR\n");
     
     let selectedBranch = null;
     let selectedCommit = null;
@@ -507,26 +520,26 @@ async function run() {
       while (!selectedBranch) {
         const { results: variants, generationTime } = await generateVariants();
         if (variants.length === 0) {
-          console.error("❌ Failed to generate variants");
+          console.error("ERROR: Failed to generate variants");
           process.exit(1);
         }
         
         selectedBranch = await selectBranchName(variants, generationTime);
         
         if (!selectedBranch) {
-          console.log("\n🔄 Generating new variants...\n");
+          console.log("\nINFO: Generating new variants...\n");
         }
       }
       
       // Step 2: Rename branch
-      console.log(`\n✅ Selected: ${selectedBranch}`);
-      console.log("\n🌿 Renaming branch...");
+      console.log(`\nOK: Selected branch: ${selectedBranch}`);
+      console.log("\nINFO: Renaming branch...");
       
       try {
         execSync(`git branch -m ${selectedBranch}`, { stdio: "inherit" });
-        console.log("✅ Branch renamed successfully!");
+        console.log("OK: Branch renamed successfully");
       } catch (error) {
-        console.error("❌ Branch rename failed:", error.message);
+        console.error("ERROR: Branch rename failed:", error.message);
         process.exit(1);
       }
 
@@ -534,14 +547,14 @@ async function run() {
     while (!selectedCommit) {
       const { results: variants, generationTime } = await generateVariants();
       if (variants.length === 0) {
-        console.error("❌ Failed to generate variants");
+        console.error("ERROR: Failed to generate variants");
         process.exit(1);
       }
       
       const selection = await selectCommitMessage(variants, generationTime);
       
       if (!selection) {
-        console.log("\n🔄 Generating new variants...\n");
+        console.log("\nINFO: Generating new variants...\n");
       } else {
         selectedCommit = selection.commit;
         selectedLabels = selection.labels;
@@ -549,33 +562,33 @@ async function run() {
     }
     
     // Step 4: Commit with selected message
-    console.log(`\n✅ Selected: ${selectedCommit}`);
+    console.log(`\nOK: Selected commit message: ${selectedCommit}`);
     if (selectedLabels) {
-      console.log(`🏷️  Labels: ${selectedLabels}`);
+      console.log(`Labels: ${selectedLabels}`);
     }
-    console.log("\n📤 Committing changes...");
+    console.log("\nINFO: Creating commit...");
     
     try {
       execSync(`git commit -m "${selectedCommit.replace(/"/g, '\\"')}"`, { stdio: "inherit" });
-      console.log("✅ Committed successfully!");
+      console.log("OK: Commit created successfully");
     } catch (error) {
-      console.error("❌ Commit failed:", error.message);
+      console.error("ERROR: Commit failed:", error.message);
       process.exit(1);
     }
     
     // Step 5 & 6: Push and create PR
       // Step 5: Push branch to remote
-      console.log("\n📤 Pushing branch to remote...");
+      console.log("\nINFO: Pushing branch to remote...");
       try {
         execSync(`git push -u origin ${selectedBranch}`, { stdio: "inherit" });
-        console.log("✅ Pushed successfully!");
+        console.log("OK: Push completed successfully");
       } catch (error) {
-        console.error("❌ Push failed:", error.message);
-        console.log("⚠️  Continuing to create PR...");
+        console.error("ERROR: Push failed:", error.message);
+        console.log("WARN: Continuing to create PR...");
       }
       
       // Step 6: Create Pull Request
-      console.log("\n🔀 Creating Pull Request...");
+      console.log("\nINFO: Creating pull request...");
       try {
         let prCommand = "gh pr create --base develop --fill --assignee brahimbousnguar";
         
@@ -586,24 +599,24 @@ async function run() {
         }
         
         execSync(prCommand, { stdio: "inherit" });
-        console.log("✅ Pull Request created successfully!");
+        console.log("OK: Pull request created successfully");
       } catch (error) {
-        console.error("❌ PR creation failed:", error.message);
-        console.log("💡 Make sure GitHub CLI (gh) is installed and authenticated");
+        console.error("ERROR: PR creation failed:", error.message);
+        console.log("TIP: Make sure GitHub CLI (gh) is installed and authenticated");
       }
 
     const elapsedSeconds = (Date.now() - startTime) / 1000;
     const timeStr = elapsedSeconds >= 60 
       ? `${Math.floor(elapsedSeconds / 60)}m ${(elapsedSeconds % 60).toFixed(2)}s`
       : `${elapsedSeconds.toFixed(2)}s`;
-    console.log(`\n⏱️  Total time: ${timeStr}\n`);
+    console.log(`\nINFO: Total time: ${timeStr}\n`);
     
   } catch (error) {
     if (error.code === "ECONNREFUSED") {
-      console.error("❌ Cannot connect to Ollama. Make sure it's running: ollama serve");
+      console.error("ERROR: Cannot connect to Ollama. Make sure it's running: ollama serve");
       console.error(`   Then pull the model: ollama pull ${modelName}`);
     } else {
-      console.error("❌ Error:", error.message);
+      console.error("ERROR:", error.message);
     }
     process.exit(1);
   }
