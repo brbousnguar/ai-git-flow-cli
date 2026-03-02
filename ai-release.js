@@ -318,16 +318,29 @@ async function run() {
     
     if (createAnswer.trim() === "" || createAnswer.toLowerCase() === "yes" || createAnswer.toLowerCase() === "y") {
       try {
-        // Ensure we're on source branch
+        // Sync base/head branches from remote before creating the PR
+        console.log("\nSyncing branches from origin before PR creation...");
+        execSync("git fetch origin --prune", { stdio: "inherit" });
+
+        const branchesToSync = [...new Set([baseBranchName, headBranchName])];
+        for (const branchName of branchesToSync) {
+          try {
+            execSync(`git rev-parse --verify ${branchName}`, { encoding: "utf8", stdio: "pipe" });
+            console.log(`Pulling latest '${branchName}' with rebase...`);
+            execSync(`git checkout ${branchName}`, { stdio: "inherit" });
+            execSync(`git pull --rebase origin ${branchName}`, { stdio: "inherit" });
+          } catch {
+            console.log(`Local '${branchName}' not found, creating it from origin/${branchName}...`);
+            execSync(`git checkout -b ${branchName} origin/${branchName}`, { stdio: "inherit" });
+          }
+        }
+
+        // Ensure we're back on source branch for pushing and PR creation
         const currentBranch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
         if (currentBranch !== headBranchName) {
-          console.log(`\n⚠️  Switching to ${headBranchName} branch...`);
+          console.log(`\nSwitching to ${headBranchName} branch...`);
           execSync(`git checkout ${headBranchName}`, { stdio: "inherit" });
         }
-        
-        // Pull latest changes with rebase
-        console.log("📥 Pulling latest changes with rebase...");
-        execSync(`git pull --rebase origin ${headBranchName}`, { stdio: "inherit" });
         
         // Push to remote
         console.log("📤 Pushing to remote...");
@@ -351,7 +364,10 @@ async function run() {
           
           // Use version as title and include only commit messages in PR body
           const prTitle = version ? `v${version}` : "Release";
-          const prBody = buildPrBodyFromCommitLog(commitLog);
+          const latestCommitLog = execSync(`git log ${baseBranchName}..${headBranchName} --oneline --no-merges`, {
+            encoding: "utf8"
+          });
+          const prBody = buildPrBodyFromCommitLog(latestCommitLog);
           
           // Debug: Show what will be sent
           console.log("\n📋 PR Details:");
