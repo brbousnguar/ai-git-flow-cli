@@ -173,6 +173,21 @@ if (!diff.trim() && !commitLog.trim()) {
   process.exit(1);
 }
 
+function buildPrBodyFromCommitLog(rawCommitLog) {
+  const messages = String(rawCommitLog || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^[a-f0-9]{7,40}\s+/i, ""))
+    .filter(Boolean);
+
+  if (messages.length === 0) {
+    return "## Commits Included\\n- No commit messages found";
+  }
+
+  return ["## Commits Included", ...messages.map((msg) => `- ${msg}`)].join("\\n");
+}
+
 // Prompt
 const prompt = `
 Generate concise Release Notes for merging ${devBranch} into ${prodBranch}, and suggest appropriate GitHub labels.
@@ -334,9 +349,9 @@ async function run() {
           
           const prUrl = `${repoUrl}/compare/${baseBranchName}...${headBranchName}`;
           
-          // Use version as title, full output as body
+          // Use version as title and include only commit messages in PR body
           const prTitle = version ? `v${version}` : "Release";
-          const prBody = output; // Use the full formatted output
+          const prBody = buildPrBodyFromCommitLog(commitLog);
           
           // Debug: Show what will be sent
           console.log("\n📋 PR Details:");
