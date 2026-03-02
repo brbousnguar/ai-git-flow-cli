@@ -4,7 +4,6 @@ import OpenAI from "openai";
 import { readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
-import { execSync } from "child_process";
 import dotenv from "dotenv";
 import { printTokenUsage, generateText, setupCliConsole } from "./ai-common.js";
 
