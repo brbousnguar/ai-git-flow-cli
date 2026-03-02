@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { execSync } from "child_process";
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync, unlinkSync } from "fs";
 import * as readline from "readline";
+import { tmpdir } from "os";
 import path from "path";
 import { loadConfigAndEnv, initOpenAIClient, printTokenUsage, generateText, setupCliConsole } from "./ai-common.js";
 
@@ -299,6 +300,21 @@ function formatDurationShort(secondsValue) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}m ${seconds}s`;
+}
+
+function buildPrBodyFromCommitLog(rawCommitLog) {
+  const messages = String(rawCommitLog || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^[a-f0-9]{7,40}\s+/i, ""))
+    .filter(Boolean);
+
+  if (messages.length === 0) {
+    return "## Commits Included\n- No commit messages found";
+  }
+
+  return ["## Commits Included", ...messages.map((msg) => `- ${msg}`)].join("\n");
 }
 
 // Prompt
@@ -672,16 +688,32 @@ async function run() {
       // Step 6: Create Pull Request
       console.log("\n## INFO: Creating pull request...");
       try {
-        let prCommand = "gh pr create --base develop --fill --assignee brahimbousnguar";
+        const baseBranchName = "develop";
+        execSync(`git fetch origin ${baseBranchName}`, { stdio: "inherit" });
+
+        const latestCommitLog = execSync(
+          `git log origin/${baseBranchName}..${selectedBranch} --oneline --no-merges`,
+          { encoding: "utf8" }
+        );
+        const prBody = buildPrBodyFromCommitLog(latestCommitLog);
+        const prTitle = selectedCommit;
+        const tempBodyFile = path.join(tmpdir(), `pr-body-${Date.now()}.md`);
+        writeFileSync(tempBodyFile, prBody, "utf8");
+
+        let prCommand = `gh pr create --base ${baseBranchName} --head ${selectedBranch} --title "${prTitle.replace(/"/g, '\\"')}" --body-file "${tempBodyFile}" --assignee brahimbousnguar`;
         
         // Use AI-selected labels or command-line provided labels
         const finalLabels = filterExcludedLabels(labels || selectedLabels);
         if (finalLabels) {
           prCommand += buildGhLabelArgs(finalLabels);
         }
-        
-        execSync(prCommand, { stdio: "inherit" });
-        console.log("## OK: Pull request created successfully");
+
+        try {
+          execSync(prCommand, { stdio: "inherit" });
+          console.log("## OK: Pull request created successfully");
+        } finally {
+          try { unlinkSync(tempBodyFile); } catch {}
+        }
       } catch (error) {
         console.error("## ERROR: PR creation failed:", error.message);
         console.log("## INFO: Make sure GitHub CLI (gh) is installed and authenticated");
