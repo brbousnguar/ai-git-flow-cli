@@ -147,9 +147,23 @@ try {
   }
 }
 
-console.log(`ℹ️  Comparing: ${devBranch} → ${prodBranch}`);
 const baseBranchName = prodBranch.replace("origin/", "");
 const headBranchName = devBranch.replace("origin/", "");
+
+try {
+  console.log("INFO: Fetching latest branches from origin before diff...");
+  execSync("git fetch origin --prune", { stdio: "inherit" });
+
+  execSync(`git rev-parse --verify origin/${baseBranchName}`, { encoding: "utf8", stdio: "pipe" });
+  execSync(`git rev-parse --verify origin/${headBranchName}`, { encoding: "utf8", stdio: "pipe" });
+} catch (error) {
+  console.error("ERROR: Failed to fetch/verify remote branches before release diff:", error.message);
+  process.exit(1);
+}
+
+prodBranch = `origin/${baseBranchName}`;
+devBranch = `origin/${headBranchName}`;
+console.log(`ℹ️  Comparing: ${devBranch} → ${prodBranch}`);
 
 // Get diff between production and develop branches
 let diff = "";
@@ -182,10 +196,10 @@ function buildPrBodyFromCommitLog(rawCommitLog) {
     .filter(Boolean);
 
   if (messages.length === 0) {
-    return "## Commits Included\\n- No commit messages found";
+    return "## Commits Included\n- No commit messages found";
   }
 
-  return ["## Commits Included", ...messages.map((msg) => `- ${msg}`)].join("\\n");
+  return ["## Commits Included", ...messages.map((msg) => `- ${msg}`)].join("\n");
 }
 
 // Prompt
@@ -318,35 +332,12 @@ async function run() {
     
     if (createAnswer.trim() === "" || createAnswer.toLowerCase() === "yes" || createAnswer.toLowerCase() === "y") {
       try {
-        // Sync base/head branches from remote before creating the PR
-        console.log("\nSyncing branches from origin before PR creation...");
+        // Refresh remote refs before creating the PR (no local checkout/switch)
+        console.log("\nFetching latest branches from origin before PR creation...");
         execSync("git fetch origin --prune", { stdio: "inherit" });
-
-        const branchesToSync = [...new Set([baseBranchName, headBranchName])];
-        for (const branchName of branchesToSync) {
-          try {
-            execSync(`git rev-parse --verify ${branchName}`, { encoding: "utf8", stdio: "pipe" });
-            console.log(`Pulling latest '${branchName}' with rebase...`);
-            execSync(`git checkout ${branchName}`, { stdio: "inherit" });
-            execSync(`git pull --rebase origin ${branchName}`, { stdio: "inherit" });
-          } catch {
-            console.log(`Local '${branchName}' not found, creating it from origin/${branchName}...`);
-            execSync(`git checkout -b ${branchName} origin/${branchName}`, { stdio: "inherit" });
-          }
-        }
-
-        // Ensure we're back on source branch for pushing and PR creation
-        const currentBranch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
-        if (currentBranch !== headBranchName) {
-          console.log(`\nSwitching to ${headBranchName} branch...`);
-          execSync(`git checkout ${headBranchName}`, { stdio: "inherit" });
-        }
-        
-        // Push to remote
-        console.log("📤 Pushing to remote...");
-        execSync(`git push origin ${headBranchName}`, { stdio: "inherit" });
-        
-        console.log("\n✅ Branch pushed successfully!");
+        execSync(`git rev-parse --verify origin/${baseBranchName}`, { encoding: "utf8", stdio: "pipe" });
+        execSync(`git rev-parse --verify origin/${headBranchName}`, { encoding: "utf8", stdio: "pipe" });
+        console.log("\n✅ Remote branches fetched successfully!");
         
         // Get repository URL from git remote
         try {
@@ -364,7 +355,7 @@ async function run() {
           
           // Use version as title and include only commit messages in PR body
           const prTitle = version ? `v${version}` : "Release";
-          const latestCommitLog = execSync(`git log ${baseBranchName}..${headBranchName} --oneline --no-merges`, {
+          const latestCommitLog = execSync(`git log origin/${baseBranchName}..origin/${headBranchName} --oneline --no-merges`, {
             encoding: "utf8"
           });
           const prBody = buildPrBodyFromCommitLog(latestCommitLog);
