@@ -142,6 +142,10 @@ node .gpt-tools/ai-commit.js -m "update RAML customer request type" -n -bug
 - `--exclude-labels <label>` - Alias of `--exclude-label`
 - `-bug`, `-documentation`, `-enhancement`, etc. - Shorthand exclusion flags
 
+**JIRA ticket enrichment (optional):**
+- When `-t/--ticket` is provided, the script can call JIRA API to fetch ticket requirements and recent done-work (comments/worklogs).
+- Add these variables to `.env`: `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`.
+
 **Supported labels:**
 - `bug`
 - `documentation`

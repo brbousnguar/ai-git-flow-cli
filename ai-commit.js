@@ -19,6 +19,7 @@ let ticketNumber = null;
 let developerMessage = null;
 let labels = null;
 let debug = false;
+let jiraContextBlock = "";
 const excludedLabels = new Set();
 const ALLOWED_LABELS = new Set([
   "bug",
@@ -302,6 +303,129 @@ function formatDurationShort(secondsValue) {
   return `${minutes}m ${seconds}s`;
 }
 
+function normalizeJiraBaseUrl(rawUrl) {
+  if (!rawUrl) return "";
+  const trimmed = String(rawUrl).trim();
+  return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
+}
+
+function adfToPlainText(node) {
+  if (!node) return "";
+  if (typeof node === "string") return node;
+  if (Array.isArray(node)) return node.map((item) => adfToPlainText(item)).join("");
+
+  if (node.type === "text") return node.text || "";
+  if (node.type === "hardBreak") return "\n";
+
+  const content = adfToPlainText(node.content || []);
+  if (["paragraph", "heading", "listItem", "bulletList", "orderedList", "tableRow"].includes(node.type)) {
+    return `${content}\n`;
+  }
+  return content;
+}
+
+function normalizeMultilineText(value, maxLength = 1800) {
+  const text = String(value || "")
+    .replace(/\r/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}\n...[truncated]`;
+}
+
+function extractCommentText(comment) {
+  if (!comment) return "";
+  if (typeof comment.body === "string") return comment.body;
+  return normalizeMultilineText(adfToPlainText(comment.body), 500);
+}
+
+async function fetchJiraTicketContext(ticketKey, config) {
+  if (typeof fetch !== "function") {
+    console.log("## WARN: This Node.js version does not support fetch; skipping JIRA context.");
+    return "";
+  }
+
+  const jiraBaseUrl = normalizeJiraBaseUrl(process.env.JIRA_BASE_URL || config?.jira?.baseUrl);
+  const jiraEmail = process.env.JIRA_EMAIL || config?.jira?.email;
+  const jiraApiToken = process.env.JIRA_API_TOKEN || config?.jira?.apiToken;
+
+  if (!jiraBaseUrl || !jiraEmail || !jiraApiToken) {
+    console.log("## WARN: JIRA credentials missing (JIRA_BASE_URL/JIRA_EMAIL/JIRA_API_TOKEN); skipping JIRA context.");
+    return "";
+  }
+
+  const auth = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString("base64");
+  const headers = {
+    Authorization: `Basic ${auth}`,
+    Accept: "application/json",
+  };
+
+  const issueUrl = `${jiraBaseUrl}/rest/api/3/issue/${encodeURIComponent(ticketKey)}?fields=summary,description,status,issuetype,labels,comment`;
+  const worklogUrl = `${jiraBaseUrl}/rest/api/3/issue/${encodeURIComponent(ticketKey)}/worklog?maxResults=5`;
+
+  try {
+    const [issueRes, worklogRes] = await Promise.all([
+      fetch(issueUrl, { method: "GET", headers }),
+      fetch(worklogUrl, { method: "GET", headers }),
+    ]);
+
+    if (!issueRes.ok) {
+      const body = await issueRes.text();
+      throw new Error(`JIRA issue fetch failed (${issueRes.status}): ${body.slice(0, 300)}`);
+    }
+
+    const issue = await issueRes.json();
+    const fields = issue?.fields || {};
+    const summary = normalizeMultilineText(fields.summary || "", 300);
+    const description = normalizeMultilineText(adfToPlainText(fields.description), 1400);
+    const status = fields?.status?.name || "Unknown";
+    const issueType = fields?.issuetype?.name || "Unknown";
+    const issueLabels = Array.isArray(fields?.labels) ? fields.labels.join(", ") : "";
+    const comments = Array.isArray(fields?.comment?.comments) ? fields.comment.comments : [];
+    const recentComments = comments
+      .slice(-3)
+      .map((comment) => {
+        const author = comment?.author?.displayName || "Unknown";
+        const text = extractCommentText(comment);
+        return text ? `- ${author}: ${text}` : "";
+      })
+      .filter(Boolean)
+      .join("\n");
+
+    let recentWorklogs = "";
+    if (worklogRes.ok) {
+      const worklogs = await worklogRes.json();
+      const items = Array.isArray(worklogs?.worklogs) ? worklogs.worklogs : [];
+      recentWorklogs = items
+        .slice(-3)
+        .map((worklog) => {
+          const author = worklog?.author?.displayName || "Unknown";
+          const note = normalizeMultilineText(adfToPlainText(worklog?.comment), 300) || "No comment";
+          return `- ${author}: ${note}`;
+        })
+        .join("\n");
+    }
+
+    const sections = [
+      `Ticket: ${ticketKey}`,
+      `Type: ${issueType}`,
+      `Status: ${status}`,
+      summary ? `Summary: ${summary}` : "",
+      issueLabels ? `Labels: ${issueLabels}` : "",
+      description ? `Requirements/Description:\n${description}` : "",
+      recentComments ? `Recent Comments (what was done):\n${recentComments}` : "",
+      recentWorklogs ? `Recent Worklogs (what was done):\n${recentWorklogs}` : "",
+    ].filter(Boolean);
+
+    return sections.join("\n\n");
+  } catch (error) {
+    console.log(`## WARN: Could not load JIRA context for ${ticketKey}: ${error.message}`);
+    return "";
+  }
+}
+
 function buildPrBodyFromCommitLog(rawCommitLog) {
   const messages = String(rawCommitLog || "")
     .split(/\r?\n/)
@@ -317,8 +441,8 @@ function buildPrBodyFromCommitLog(rawCommitLog) {
   return ["## Commits Included", ...messages.map((msg) => `- ${msg}`)].join("\n");
 }
 
-// Prompt
-const prompt = `
+function buildPrompt() {
+  return `
 You analyze code changes and generate 4 different variants of:
 1. A clean commit message following Conventional Commits
 2. A Gitflow-compliant branch name
@@ -340,9 +464,10 @@ ${excludedLabels.size > 0 ? `  * NEVER use excluded labels: ${Array.from(exclude
 - Be concise and descriptive
 - No emojis
 - PRIORITY ORDER:
-  1) Developer Context is PRIMARY intent and wording source for commit/branch descriptions.
-  2) Code diff is SECONDARY for validation and scope refinement.
-  3) If context and diff conflict, keep the Developer Context intent and only adjust technical nouns for correctness.
+  1) JIRA Ticket Context (requirements + what was done) is PRIMARY when provided.
+  2) Developer Context is SECONDARY intent and wording source.
+  3) Code diff is THIRD for validation and scope refinement.
+  4) If sources conflict, prefer JIRA context, then developer context, then diff.
 ${developerMessage ? `- Developer Context: "${developerMessage}"
   * Reuse concrete terms from this context in BOTH commit description and branch description.
   * Ensure at least 2 key nouns/phrases from this context appear in each generated variant.
@@ -377,13 +502,14 @@ ${developerMessage ? `- Developer Context: "${developerMessage}"
   Branch: [branch name]
   Labels: [label1,label2]
 
-${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${developerMessage ? `Developer Context (primary intent): ${developerMessage}\n\n` : ""}Code Changes:
+${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${jiraContextBlock ? `JIRA Ticket Context (primary intent):\n${jiraContextBlock}\n\n` : ""}${developerMessage ? `Developer Context: ${developerMessage}\n\n` : ""}Code Changes:
 ---
 ${effectiveDiff}
 ---
 
-Generate 4 variants using Developer Context as primary intent and the code diff as validation:
+Generate 4 variants using JIRA context first, then developer context, then diff validation:
 `;
+}
 
 function parseVariants(outputText) {
   const strictResults = [];
@@ -479,12 +605,13 @@ Rules:
 - types allowed: feat, fix, refactor, chore, docs, test, perf, hotfix
 - labels: comma-separated from bug, documentation, enhancement, duplicate, help wanted, good first issue, question, wontfix
 ${excludedLabels.size > 0 ? `- NEVER use excluded labels: ${Array.from(excludedLabels).join(", ")}` : ""}
-${developerMessage ? `- Developer Context is PRIMARY intent; reuse its key wording in commit and branch description` : ""}
+${jiraContextBlock ? `- JIRA Ticket Context is PRIMARY intent; prioritize requirements and recent done-work notes.` : ""}
+${developerMessage ? `- Developer Context is SECONDARY intent; reuse its key wording when compatible with JIRA context.` : ""}
 
 JSON schema:
 [{"commit":"...","branch":"...","labels":"label1,label2"}]
 
-${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${developerMessage ? `Developer Context (primary intent): ${developerMessage}\n\n` : ""}Code Changes:
+${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${jiraContextBlock ? `JIRA Ticket Context (primary intent):\n${jiraContextBlock}\n\n` : ""}${developerMessage ? `Developer Context: ${developerMessage}\n\n` : ""}Code Changes:
 ---
 ${diffContent}
 ---
@@ -498,7 +625,7 @@ async function generateVariants() {
     provider,
     modelName,
     systemPrompt: effectiveSystemMessage,
-    userPrompt: prompt,
+    userPrompt: buildPrompt(),
     temperature: 0.2,
     debug,
     debugLabel: "variants-primary",
@@ -609,6 +736,14 @@ async function run() {
   
   try {
     console.log("\n## Workflow: Rename branch + Commit + Create PR\n");
+
+    if (ticketNumber) {
+      console.log(`## INFO: Loading JIRA context for ticket ${ticketNumber}...`);
+      jiraContextBlock = await fetchJiraTicketContext(ticketNumber, config);
+      if (jiraContextBlock) {
+        console.log("## OK: JIRA ticket context loaded and will be used for branch/commit generation.");
+      }
+    }
     
     let selectedBranch = null;
     let selectedCommit = null;
