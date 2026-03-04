@@ -17,6 +17,8 @@ setupCliConsole();
 const args = process.argv.slice(2);
 let version = null;
 let labels = null;
+let jiraTicketContext = "";
+let ticketCommitContext = "";
 
 function parseLabelList(rawLabels) {
   if (!rawLabels) return [];
@@ -202,21 +204,135 @@ function buildPrBodyFromCommitLog(rawCommitLog) {
   return ["## Commits Included", ...messages.map((msg) => `- ${msg}`)].join("\n");
 }
 
-// Prompt
-const prompt = `
+function normalizeJiraBaseUrl(rawUrl) {
+  if (!rawUrl) return "";
+  const trimmed = String(rawUrl).trim();
+  return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
+}
+
+function adfToPlainText(node) {
+  if (!node) return "";
+  if (typeof node === "string") return node;
+  if (Array.isArray(node)) return node.map((item) => adfToPlainText(item)).join("");
+  if (node.type === "text") return node.text || "";
+  if (node.type === "hardBreak") return "\n";
+
+  const content = adfToPlainText(node.content || []);
+  if (["paragraph", "heading", "listItem", "bulletList", "orderedList", "tableRow"].includes(node.type)) {
+    return `${content}\n`;
+  }
+  return content;
+}
+
+function normalizeMultilineText(value, maxLength = 1000) {
+  const text = String(value || "")
+    .replace(/\r/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}\n...[truncated]`;
+}
+
+function extractJiraKeysFromCommitLog(rawCommitLog) {
+  const matches = String(rawCommitLog || "").match(/\b[A-Z][A-Z0-9]+-\d+\b/g) || [];
+  return [...new Set(matches)];
+}
+
+function buildTicketCommitContext(rawCommitLog) {
+  const ticketMap = new Map();
+  const lines = String(rawCommitLog || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^[a-f0-9]{7,40}\s+/i, ""));
+
+  for (const line of lines) {
+    const keys = line.match(/\b[A-Z][A-Z0-9]+-\d+\b/g) || [];
+    for (const key of keys) {
+      if (!ticketMap.has(key)) ticketMap.set(key, []);
+      const cleaned = line
+        .replace(new RegExp(`\\[?${key}\\]?`, "g"), "")
+        .replace(/\s{2,}/g, " ")
+        .replace(/^[-: ]+|[-: ]+$/g, "")
+        .trim();
+      if (cleaned) {
+        ticketMap.get(key).push(cleaned);
+      }
+    }
+  }
+
+  if (ticketMap.size === 0) return "";
+  const linesOut = [];
+  for (const [key, messages] of ticketMap.entries()) {
+    const uniq = [...new Set(messages)];
+    linesOut.push(`- ${key}: ${uniq.join(" | ")}`);
+  }
+  return linesOut.join("\n");
+}
+
+async function fetchJiraTicketsContext(ticketKeys, config) {
+  if (!Array.isArray(ticketKeys) || ticketKeys.length === 0) return "";
+  if (typeof fetch !== "function") {
+    console.log("WARN: Node fetch is unavailable; skipping JIRA enrichment.");
+    return "";
+  }
+
+  const jiraBaseUrl = normalizeJiraBaseUrl(process.env.JIRA_BASE_URL || config?.jira?.baseUrl);
+  const jiraEmail = process.env.JIRA_EMAIL || config?.jira?.email;
+  const jiraApiToken = process.env.JIRA_API_TOKEN || config?.jira?.apiToken;
+
+  if (!jiraBaseUrl || !jiraEmail || !jiraApiToken) {
+    console.log("INFO: JIRA credentials not configured; skipping ticket enrichment.");
+    return "";
+  }
+
+  const auth = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString("base64");
+  const headers = {
+    Authorization: `Basic ${auth}`,
+    Accept: "application/json",
+  };
+
+  const responses = await Promise.all(
+    ticketKeys.map(async (ticketKey) => {
+      try {
+        const issueUrl = `${jiraBaseUrl}/rest/api/3/issue/${encodeURIComponent(ticketKey)}?fields=summary,description,status,issuetype`;
+        const response = await fetch(issueUrl, { method: "GET", headers });
+        if (!response.ok) {
+          return `- ${ticketKey}: [Could not load ticket details: HTTP ${response.status}]`;
+        }
+        const issue = await response.json();
+        const fields = issue?.fields || {};
+        const summary = normalizeMultilineText(fields.summary || "No summary", 240);
+        const type = fields?.issuetype?.name || "Unknown";
+        const status = fields?.status?.name || "Unknown";
+        const description = normalizeMultilineText(adfToPlainText(fields.description), 450);
+        const descPart = description ? `\n  Description: ${description.replace(/\n/g, " ")}` : "";
+        return `- ${ticketKey}: ${summary}\n  Type: ${type}; Status: ${status}${descPart}`;
+      } catch (error) {
+        return `- ${ticketKey}: [Could not load ticket details: ${error.message}]`;
+      }
+    })
+  );
+
+  return responses.join("\n");
+}
+
+function buildReleasePrompt() {
+  return `
 Generate concise Release Notes for merging ${devBranch} into ${prodBranch}, and suggest appropriate GitHub labels.
 
 IMPORTANT: Output ONLY the Release Notes section followed by Labels. Do NOT include a PR Title line.
+PRIMARY GOAL: Group notes by JIRA ticket and consolidate multiple commits for the same ticket into one bullet.
 
 Output format:
 **Release Notes:**
-[List high-level changes only]
-[Use proper markdown formatting with bold headers]
-[Categories if needed: **Features:**, **Bug Fixes:**, **Refactoring:**, **Chores:**]
+[Use valid markdown with one bullet per ticket]
+[Preferred line format: - [TICKET-123] concise user-facing summary]
+[If same ticket has multiple commit intents, merge them into one sentence]
 [NO code references, file names, or technical details]
 [NO backticks or code formatting]
-[SKIP empty sections]
-[Be extremely brief - one line per change]
+[Be brief and user-facing]
 
 **Labels:** [label1,label2]
 [Choose 1-2 from: bug, documentation, enhancement, duplicate, help wanted, good first issue, question, wontfix]
@@ -227,8 +343,8 @@ Output format:
 
 Example good format:
 **Release Notes:**
-- Update API dependency to latest version
-- Fix authentication timeout issue
+- [SFSC-1638] Added quote update flow and improved listener behavior
+- [SFSC-1734] Fixed pivot mapping for currency values
 
 **Labels:** enhancement,bug
 
@@ -237,9 +353,22 @@ Example bad format (avoid):
 
 ---BEGIN ANALYSIS DATA (do not include in output)---
 Commits: ${commitLog}
+Ticket-to-commit mapping:
+${ticketCommitContext || "(none)"}
+JIRA ticket details:
+${jiraTicketContext || "(not available)"}
 Diff: ${diff.slice(0, 8000)}
 ---END ANALYSIS DATA---
 `;
+}
+
+function extractApprovedReleaseNotes(rawOutput) {
+  const text = String(rawOutput || "").trim();
+  if (!text) return "";
+  const noteOnly = text.split(/\*\*Labels:\*\*/i)[0].trim();
+  if (!noteOnly) return "";
+  return noteOnly;
+}
 
 async function generatePRDetails(variantNumber = 1) {
   const variantInstruction = variantNumber > 1 
@@ -254,7 +383,7 @@ async function generatePRDetails(variantNumber = 1) {
     client,
     provider,
     modelName,
-    userPrompt: prompt + variantInstruction,
+    userPrompt: buildReleasePrompt() + variantInstruction,
     temperature: 0.7,
   });
 
@@ -283,6 +412,15 @@ async function run() {
   console.log(`🤖 Using model: ${modelName} (${provider})`);
   
   try {
+    const jiraKeys = extractJiraKeysFromCommitLog(commitLog);
+    ticketCommitContext = buildTicketCommitContext(commitLog);
+    if (jiraKeys.length > 0) {
+      console.log(`INFO: Loading JIRA details for ${jiraKeys.length} ticket(s)...`);
+      jiraTicketContext = await fetchJiraTicketsContext(jiraKeys, config);
+    } else {
+      console.log("INFO: No JIRA ticket IDs found in commit range.");
+    }
+
     let output = null;
     let suggestedLabels = null;
     let approved = false;
@@ -353,12 +491,15 @@ async function run() {
           
           const prUrl = `${repoUrl}/compare/${baseBranchName}...${headBranchName}`;
           
-          // Use version as title and include only commit messages in PR body
+          // Use version as title and AI-approved release notes as PR body
           const prTitle = version ? `v${version}` : "Release";
           const latestCommitLog = execSync(`git log origin/${baseBranchName}..origin/${headBranchName} --oneline --no-merges`, {
             encoding: "utf8"
           });
-          const prBody = buildPrBodyFromCommitLog(latestCommitLog);
+          let prBody = extractApprovedReleaseNotes(output);
+          if (!prBody) {
+            prBody = buildPrBodyFromCommitLog(latestCommitLog);
+          }
           
           // Debug: Show what will be sent
           console.log("\n📋 PR Details:");
