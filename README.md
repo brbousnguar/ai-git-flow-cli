@@ -341,6 +341,47 @@ Set your default Mule logs path in `config.json`:
 }
 ```
 
+### 4. ai-jira-deploy-message.js - JIRA Deployment Reply
+
+Creates a short French reply message for the reporter, injects the latest git tag, and posts it to a JIRA ticket after approval.
+
+**Usage:**
+```bash
+# With ticket and reporter
+node .gpt-tools/ai-jira-deploy-message.js -t SFSC-1638 -r "Guilhem"
+
+# Same command but publish to JIRA (comment + Mulesoft Version update)
+node .gpt-tools/ai-jira-deploy-message.js -t SFSC-1638 -r "Guilhem" --post
+
+# With ticket only (reporter auto-loaded from JIRA issue)
+node .gpt-tools/ai-jira-deploy-message.js -t SFSC-1638
+
+# List recent comments on a ticket
+node .gpt-tools/ai-jira-deploy-message.js -t SFSC-1638 --list-comments
+
+# Delete a comment by id
+node .gpt-tools/ai-jira-deploy-message.js -t SFSC-1638 --delete --comment-id 123456
+
+# Delete all comments on a ticket (interactive: review each comment)
+node .gpt-tools/ai-jira-deploy-message.js -t SFSC-1638 --delete-all
+```
+
+**Flow:**
+- Reads latest git tag (`git tag --sort=-version:refname`)
+- Suggests a message in terminal
+- `Enter`: post to JIRA
+- `n`: regenerate another variant
+- `q`: cancel
+- Default mode is preview only (no JIRA write)
+- `--post` publishes the comment and updates issue field `Mulesoft Version` (if field exists)
+- Delete mode: list comments, pick an id, and remove it from JIRA
+- Delete-all mode: reviews comments one by one (`Enter` delete, `n` skip, `q` stop)
+
+**Required .env variables:**
+- `JIRA_BASE_URL`
+- `JIRA_EMAIL`
+- `JIRA_API_TOKEN`
+
 ## Gitflow Best Practices
 
 **Branch Types:**
