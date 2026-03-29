@@ -1,0 +1,7 @@
+interface:
+  display_name: "Git Workflow Standards"
+  short_description: "Repo-specific branch, commit, and PR conventions"
+  default_prompt: "Use $git-workflow-repo-standards to generate or review branch names, commit messages, labels, and PR content using this repo's actual workflow rules."
+
+policy:
+  allow_implicit_invocation: true

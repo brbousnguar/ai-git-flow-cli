@@ -2,6 +2,47 @@
 
 AI-powered scripts for generating commit messages and release notes using local Ollama models.
 
+## Web App
+
+This repo now also includes a web app built with **Next.js 15 + TypeScript**. It exposes the existing workflows through a browser UI while keeping the original CLI scripts available.
+
+**What the web app supports:**
+- Commit workflow preview and execution from staged changes
+- Release PR preview and creation for `develop` -> `main`
+- JIRA deployment reply preview, publish, comment listing, and deletion
+- Repository selection from `D:\Projects\RocheBB\Repos` before running a workflow
+
+**Run it locally:**
+```bash
+npm install
+npm run dev
+```
+
+Then open:
+```text
+http://localhost:3000
+```
+
+### Run with Docker Compose
+
+Build and start the web app in detached mode:
+
+```bash
+docker compose up --build -d
+```
+
+Stop it later with:
+
+```bash
+docker compose down
+```
+
+**Notes:**
+- The web app runs server-side git, `gh`, OpenAI/Ollama, and JIRA operations from this repo directory
+- It uses the same `.env` and `config.json` configuration as the CLI tools
+- You first choose a repository, then the UI shows changed files and staged files for readiness checks
+- For the commit workflow, changes must already be staged with `git add`
+
 ## Prerequisites
 
 1. **For Local Models (Ollama):**
