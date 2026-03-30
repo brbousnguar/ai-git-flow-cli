@@ -124,7 +124,11 @@ function buildPrompt(params: {
   jiraContext?: string;
   excludedLabels: string[];
 }) {
-  const forcedType = detectType(params.developerMessage || params.jiraContext || "feature");
+  const trimmedDeveloperMessage = String(params.developerMessage || "").trim();
+  const exclusiveDeveloperContext = trimmedDeveloperMessage.length > 0;
+  const forcedType = detectType(trimmedDeveloperMessage || params.jiraContext || "feature");
+  const promptJiraContext = exclusiveDeveloperContext ? "none" : params.jiraContext || "none";
+  const promptDiff = exclusiveDeveloperContext ? "none" : params.diff.slice(0, 12000);
 
   return {
     forcedType,
@@ -138,9 +142,14 @@ Each variant must include:
 
 Rules:
 - Reuse the most important nouns from the provided context.
-- Prioritize JIRA context first, then developer message, then the diff.
+${exclusiveDeveloperContext
+  ? `- Developer message is the ONLY intent source for this run.
+- Ignore JIRA ticket details except for preserving the ticket key in the output format.
+- Ignore staged diff details for naming and wording.
+- If the developer message is short, expand only with neutral wording and do not invent unrelated scope.`
+  : `- Prioritize JIRA context first, then developer message, then the diff.
 - Keep branch descriptions short and explicit.
-- Never use labels excluded by the user.
+- Never use labels excluded by the user.`}
 - Output exactly:
 Variant 1:
 Commit: ...
@@ -166,13 +175,13 @@ Ticket: ${params.ticket || "none"}
 Excluded labels: ${params.excludedLabels.join(", ") || "none"}
 
 JIRA Context:
-${params.jiraContext || "none"}
+${promptJiraContext}
 
 Developer Message:
-${params.developerMessage || "none"}
+${trimmedDeveloperMessage || "none"}
 
 Staged Diff:
-${params.diff.slice(0, 12000)}
+${promptDiff}
 `.trim(),
     systemPrompt: [loadTextFile("BRANCH_NAMING_GUIDE.md"), loadTextFile("COMMIT_MESSAGE_GUIDE.md")]
       .filter(Boolean)
@@ -193,7 +202,9 @@ export async function previewCommitWorkflow(input: {
     throw new Error("No staged changes found. Stage files before generating commit variants.");
   }
 
-  const jiraContext = input.ticket ? await fetchJiraTicketContext(input.ticket) : "";
+  const jiraContext = input.ticket && !String(input.developerMessage || "").trim()
+    ? await fetchJiraTicketContext(input.ticket)
+    : "";
   const runtime = getAiRuntime();
   const prompt = buildPrompt({
     diff,

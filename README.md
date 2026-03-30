@@ -178,6 +178,7 @@ node .gpt-tools/ai-commit.js -m "update RAML customer request type" -n -bug
 - `-t, --ticket <number>` - Ticket/issue number (e.g., SFSC-1573, JIRA-123)
 - `-m, --message <text>` - Context to guide branch naming and commit message generation
   - Examples: "new feature, add customer endpoint", "bugfix, fix login timeout", "refactor authentication"
+  - When `-m` is provided, generation uses that message as the exclusive naming intent and does not pull JIRA or diff wording into the prompt
 - `-l, --labels <labels>` - Custom GitHub labels (comma-separated)
 - `-n, --exclude-label <label>` - Exclude a label from AI suggestions and PR creation
 - `--exclude-labels <label>` - Alias of `--exclude-label`

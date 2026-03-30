@@ -442,6 +442,11 @@ function buildPrBodyFromCommitLog(rawCommitLog) {
 }
 
 function buildPrompt() {
+  const trimmedDeveloperMessage = String(developerMessage || "").trim();
+  const hasExclusiveDeveloperContext = trimmedDeveloperMessage.length > 0;
+  const promptJiraContext = hasExclusiveDeveloperContext ? "" : jiraContextBlock;
+  const promptDiff = hasExclusiveDeveloperContext ? "" : effectiveDiff;
+
   return `
 You analyze code changes and generate 4 different variants of:
 1. A clean commit message following Conventional Commits
@@ -464,11 +469,14 @@ ${excludedLabels.size > 0 ? `  * NEVER use excluded labels: ${Array.from(exclude
 - Be concise and descriptive
 - No emojis
 - PRIORITY ORDER:
-  1) JIRA Ticket Context (requirements + what was done) is PRIMARY when provided.
+${hasExclusiveDeveloperContext ? `  1) Developer Context is the ONLY intent source for this run.
+  2) Ignore JIRA ticket details except for preserving the ticket key in the output format.
+  3) Ignore code diff details for naming and wording.
+  4) If the developer context is short, expand only with neutral wording; do not invent unrelated scope.` : `  1) JIRA Ticket Context (requirements + what was done) is PRIMARY when provided.
   2) Developer Context is SECONDARY intent and wording source.
   3) Code diff is THIRD for validation and scope refinement.
-  4) If sources conflict, prefer JIRA context, then developer context, then diff.
-${developerMessage ? `- Developer Context: "${developerMessage}"
+  4) If sources conflict, prefer JIRA context, then developer context, then diff.`}
+${trimmedDeveloperMessage ? `- Developer Context: "${trimmedDeveloperMessage}"
   * Reuse concrete terms from this context in BOTH commit description and branch description.
   * Ensure at least 2 key nouns/phrases from this context appear in each generated variant.
   * CRITICAL: If the context contains keywords like "fix", "bug", "bugfix" -> use ONLY "fix" type for ALL 4 variants
@@ -502,12 +510,12 @@ ${developerMessage ? `- Developer Context: "${developerMessage}"
   Branch: [branch name]
   Labels: [label1,label2]
 
-${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${jiraContextBlock ? `JIRA Ticket Context (primary intent):\n${jiraContextBlock}\n\n` : ""}${developerMessage ? `Developer Context: ${developerMessage}\n\n` : ""}Code Changes:
+${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${promptJiraContext ? `JIRA Ticket Context (primary intent):\n${promptJiraContext}\n\n` : ""}${trimmedDeveloperMessage ? `Developer Context: ${trimmedDeveloperMessage}\n\n` : ""}${promptDiff ? `Code Changes:
 ---
-${effectiveDiff}
+${promptDiff}
 ---
 
-Generate 4 variants using JIRA context first, then developer context, then diff validation:
+Generate 4 variants using JIRA context first, then developer context, then diff validation:` : `Generate 4 variants using ONLY the developer context above:`}
 `;
 }
 
@@ -737,12 +745,14 @@ async function run() {
   try {
     console.log("\n## Workflow: Rename branch + Commit + Create PR\n");
 
-    if (ticketNumber) {
+    if (ticketNumber && !developerMessage?.trim()) {
       console.log(`## INFO: Loading JIRA context for ticket ${ticketNumber}...`);
       jiraContextBlock = await fetchJiraTicketContext(ticketNumber, config);
       if (jiraContextBlock) {
         console.log("## OK: JIRA ticket context loaded and will be used for branch/commit generation.");
       }
+    } else if (ticketNumber && developerMessage?.trim()) {
+      console.log("## INFO: Developer context provided with -m; skipping JIRA context and diff context for generation.");
     }
     
     let selectedBranch = null;
