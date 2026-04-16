@@ -1,7 +1,7 @@
 {
-  "provider": "local",
+  "provider": "cloud",
   "local": {
-    "default": "qwen2.5-coder:3b",
+    "default": "qwen2.5-coder:14b",
     "models": {
       "qwen2.5-coder:7b": "Fast default for code + diffs + scripts",
       "mistral-nemo:12b": "Slower, better reasoning / complex changes",
