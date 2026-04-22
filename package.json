@@ -1,19 +1,25 @@
 {
-  "name": "@gpt/.gpt-tools",
+  "name": "ai-local-git-flow",
   "version": "1.0.0",
   "type": "module",
   "private": true,
   "main": "index.js",
+  "bin": {
+    "ai-commit": "./ai-commit.js",
+    "ai-release": "./ai-release.js"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "ai-commit": "node ./ai-commit.js",
+    "ai-release": "node ./ai-release.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "AI-assisted local git workflow tools",
   "dependencies": {
     "dotenv": "^17.2.3",
     "next": "^15.3.0",

@@ -11,8 +11,8 @@ AI-powered Git automation toolset for a Roche development environment. Generates
 
 ## Entry points
 - `npm run dev` — Next.js web app at `http://localhost:3000`
-- `node ai-commit.js -t TICKET-123 -m "context"` — CLI commit workflow
-- `node ai-release.js` — CLI release notes workflow
+- `ai-commit -t TICKET-123 -m "context"` — CLI commit workflow
+- `ai-release` — CLI release notes workflow
 - `node ai-jira-deploy-message.js` — CLI JIRA deploy message workflow
 - `node ai-mule-logs.js` — CLI MuleSoft log analysis
 - `docker compose up --build -d` — containerized web app

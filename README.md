@@ -144,7 +144,16 @@ Edit `config.json` to configure your AI provider:
 
 ## Scripts
 
-### 1. ai-commit.js - Commit Messages & Branch Names
+The preferred terminal commands assume these Git Bash aliases are present in `~/.bashrc`:
+
+```bash
+alias ai-commit='node /d/Projects/RocheBB/Tools/ai-local-git-flow/ai-commit.js'
+alias ai-release='node /d/Projects/RocheBB/Tools/ai-local-git-flow/ai-release.js'
+```
+
+You can also run the same workflows from this repository with `npm run ai-commit --` and `npm run ai-release --`.
+
+### 1. ai-commit - Commit Messages & Branch Names
 
 Generates commit messages and branch names from staged changes, then runs one workflow: rename branch, commit, push, and create PR.
 
@@ -154,24 +163,24 @@ Generates commit messages and branch names from staged changes, then runs one wo
 git add <files>
 
 # Full workflow (branch + commit + PR)
-node .gpt-tools/ai-commit.js
+ai-commit
 
 # Provide context for better branch naming and commit messages
-node .gpt-tools/ai-commit.js -m "new feature, add customer request endpoint"
-node .gpt-tools/ai-commit.js -m "bugfix, fix timeout in payment processing"
-node .gpt-tools/ai-commit.js -m "refactor authentication module for better security"
+ai-commit -m "new feature, add customer request endpoint"
+ai-commit -m "bugfix, fix timeout in payment processing"
+ai-commit -m "refactor authentication module for better security"
 
 # With ticket number and context
-node .gpt-tools/ai-commit.js -t SFSC-1573 -m "new feature, implement SSO authentication"
-node .gpt-tools/ai-commit.js -t JIRA-456 -m "bugfix, resolve memory leak in cache"
+ai-commit -t SFSC-1573 -m "new feature, implement SSO authentication"
+ai-commit -t JIRA-456 -m "bugfix, resolve memory leak in cache"
 
 # With custom labels
-node .gpt-tools/ai-commit.js -l "bug,enhancement" -m "hotfix, critical security patch"
+ai-commit -l "bug,enhancement" -m "hotfix, critical security patch"
 
 # Exclude labels (negative prompt)
-node .gpt-tools/ai-commit.js -m "update RAML customer request type" -n bug
-node .gpt-tools/ai-commit.js -m "update RAML customer request type" --exclude-label bug
-node .gpt-tools/ai-commit.js -m "update RAML customer request type" -n -bug
+ai-commit -m "update RAML customer request type" -n bug
+ai-commit -m "update RAML customer request type" --exclude-label bug
+ai-commit -m "update RAML customer request type" -n -bug
 ```
 
 **Command-Line Options:**
@@ -262,17 +271,17 @@ Select commit message (Enter=1, 2-4, or 'n' for new): 1
 ⏱️  Total time: 12.45s
 ```
 
-### 2. ai-release.js - Pull Request Notes
+### 2. ai-release - Pull Request Notes
 
 Generates PR title and release notes comparing `develop` → `main`.
 
 **Usage:**
 ```bash
 # Without version
-node .gpt-tools/ai-release.js
+ai-release
 
 # With version tag
-node .gpt-tools/ai-release.js -v v1.1.23
+ai-release -v v1.1.23
 ```
 
 **Output:**

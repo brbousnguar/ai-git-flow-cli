@@ -15,9 +15,9 @@ npm run lint       # Run ESLint
 docker compose up --build -d   # Run containerized
 docker compose down            # Stop container
 
-# CLI scripts (run directly, no build needed)
-node ai-commit.js -t TICKET-123 -m "context"
-node ai-release.js
+# CLI scripts (Git Bash aliases, no build needed)
+ai-commit -t TICKET-123 -m "context"
+ai-release
 node ai-mule-logs.js
 node ai-jira-deploy-message.js
 ```
