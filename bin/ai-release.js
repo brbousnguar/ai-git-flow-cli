@@ -5,7 +5,7 @@ import { writeFileSync, unlinkSync } from "fs";
 import * as readline from "readline";
 import { tmpdir } from "os";
 import path from "path";
-import { loadConfigAndEnv, initOpenAIClient, printTokenUsage, generateText, setupCliConsole } from "./ai-common.js";
+import { loadConfigAndEnv, initOpenAIClient, printTokenUsage, generateText, setupCliConsole } from "../src/ai-common.js";
 
 // Load config and env
 const { config, __dirname } = loadConfigAndEnv(import.meta.url);

@@ -7,8 +7,8 @@ CLI tools for AI-assisted Git workflows in Git Bash.
 The intended setup is through aliases in `~/.bashrc`:
 
 ```bash
-alias ai-commit='node /d/Projects/RocheBB/Tools/ai-local-git-flow/ai-commit.js'
-alias ai-release='node /d/Projects/RocheBB/Tools/ai-local-git-flow/ai-release.js'
+alias ai-commit='node /d/Projects/RocheBB/Tools/ai-local-git-flow/bin/ai-commit.js'
+alias ai-release='node /d/Projects/RocheBB/Tools/ai-local-git-flow/bin/ai-release.js'
 ```
 
 Reload Git Bash after editing `~/.bashrc`, or run:
@@ -127,11 +127,20 @@ It fetches remotes, summarizes changes, then can create the release PR through G
 - GitHub CLI (`gh`) authenticated for PR creation
 - OpenAI API key or local Ollama-compatible endpoint
 
+## Runtime
+
+- Node.js ES modules
+- OpenAI SDK
+- `dotenv`
+- Git CLI
+- GitHub CLI (`gh`)
+- Optional JIRA REST enrichment through `.env`
+
 ## Project Files
 
-- `ai-commit.js`: commit workflow CLI
-- `ai-release.js`: release PR workflow CLI
-- `ai-common.js`: shared config, OpenAI/Ollama client, token usage, console formatting
+- `bin/ai-commit.js`: commit workflow CLI
+- `bin/ai-release.js`: release PR workflow CLI
+- `src/ai-common.js`: shared config, OpenAI/Ollama client, token usage, console formatting
 - `config.json`: provider/model/pricing configuration
-- `BRANCH_NAMING_GUIDE.md`: branch naming rules used in prompts
-- `COMMIT_MESSAGE_GUIDE.md`: commit message rules used in prompts
+- `prompts/branch-naming.md`: branch naming rules used in prompts
+- `prompts/commit-message.md`: commit message rules used in prompts

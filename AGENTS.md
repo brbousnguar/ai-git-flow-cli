@@ -4,12 +4,12 @@
 
 This repository contains Node.js ES module CLI tools for AI-assisted Git workflows.
 
-- `ai-commit.js`: commit workflow CLI; generates branch names, commit messages, labels, commits staged files, pushes, and can create a PR.
-- `ai-release.js`: release workflow CLI; compares development and production branches and prepares release PR content.
-- `ai-common.js`: shared configuration, environment loading, AI client setup, token accounting, and console helpers.
+- `bin/ai-commit.js`: commit workflow CLI; generates branch names, commit messages, labels, commits staged files, pushes, and can create a PR.
+- `bin/ai-release.js`: release workflow CLI; compares development and production branches and prepares release PR content.
+- `src/ai-common.js`: shared configuration, environment loading, AI client setup, token accounting, and console helpers.
 - `config.json`: provider, model, and pricing configuration.
 - `.env.example`: required environment variable template; keep real secrets in `.env`.
-- `BRANCH_NAMING_GUIDE.md` and `COMMIT_MESSAGE_GUIDE.md`: source-of-truth prompt contracts.
+- `prompts/branch-naming.md` and `prompts/commit-message.md`: source-of-truth prompt contracts.
 
 There is currently no `src/`, frontend, Docker runtime, or dedicated test directory.
 
@@ -37,7 +37,7 @@ For daily Git Bash usage, define the aliases documented in `README.md`.
 
 ## Coding Style & Naming Conventions
 
-Use modern JavaScript ES modules; `package.json` sets `"type": "module"`. Keep code in top-level CLI files unless shared behavior belongs in `ai-common.js`. Prefer explicit function and variable names. Match the existing two-space indentation style. There is no configured formatter or linter, so preserve surrounding style.
+Use modern JavaScript ES modules; `package.json` sets `"type": "module"`. Keep executable CLIs in `bin/` and shared behavior in `src/ai-common.js`. Prefer explicit function and variable names. Match the existing two-space indentation style. There is no configured formatter or linter, so preserve surrounding style.
 
 ## Testing Guidelines
 
@@ -45,7 +45,7 @@ No automated test suite is currently configured. Validate changes by running the
 
 ## Commit & Pull Request Guidelines
 
-Follow the repository contracts in `BRANCH_NAMING_GUIDE.md` and `COMMIT_MESSAGE_GUIDE.md`.
+Follow the repository contracts in `prompts/branch-naming.md` and `prompts/commit-message.md`.
 
 - Branches: `<type>/<TICKET>-<verb>-<target>`, for example `feat/SFSC-2041-add-loyalty-banner`.
 - Commit messages: `[TICKET] type(scope): short summary` when a ticket exists, otherwise `type(scope): short summary`.

@@ -10,8 +10,8 @@ ai-release
 The aliases are expected to be defined in `~/.bashrc`:
 
 ```bash
-alias ai-commit='node /d/Projects/RocheBB/Tools/ai-local-git-flow/ai-commit.js'
-alias ai-release='node /d/Projects/RocheBB/Tools/ai-local-git-flow/ai-release.js'
+alias ai-commit='node /d/Projects/RocheBB/Tools/ai-local-git-flow/bin/ai-commit.js'
+alias ai-release='node /d/Projects/RocheBB/Tools/ai-local-git-flow/bin/ai-release.js'
 ```
 
 ## Commands
@@ -27,11 +27,11 @@ No frontend, Docker app, TypeScript build, or test suite is part of this trimmed
 ## Architecture
 
 ```text
-ai-commit.js
-ai-release.js
+bin/ai-commit.js
+bin/ai-release.js
       |
       v
-ai-common.js
+src/ai-common.js
       |
       v
 config.json + .env + OpenAI/Ollama + Git CLI + GitHub CLI + optional JIRA REST
@@ -41,12 +41,12 @@ config.json + .env + OpenAI/Ollama + Git CLI + GitHub CLI + optional JIRA REST
 
 | File | Purpose |
 |------|---------|
-| `ai-commit.js` | Generates branch names, commit messages, labels, then commits/pushes/creates PR |
-| `ai-release.js` | Generates release PR title/body from branch diff |
-| `ai-common.js` | Shared config/env loading, AI client, text generation, token usage |
+| `bin/ai-commit.js` | Generates branch names, commit messages, labels, then commits/pushes/creates PR |
+| `bin/ai-release.js` | Generates release PR title/body from branch diff |
+| `src/ai-common.js` | Shared config/env loading, AI client, text generation, token usage |
 | `config.json` | AI provider, model, and pricing configuration |
-| `BRANCH_NAMING_GUIDE.md` | Prompt reference for branch names |
-| `COMMIT_MESSAGE_GUIDE.md` | Prompt reference for commit messages |
+| `prompts/branch-naming.md` | Prompt reference for branch names |
+| `prompts/commit-message.md` | Prompt reference for commit messages |
 
 ## Notes
 

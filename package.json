@@ -4,12 +4,12 @@
   "type": "module",
   "private": true,
   "bin": {
-    "ai-commit": "./ai-commit.js",
-    "ai-release": "./ai-release.js"
+    "ai-commit": "./bin/ai-commit.js",
+    "ai-release": "./bin/ai-release.js"
   },
   "scripts": {
-    "ai-commit": "node ./ai-commit.js",
-    "ai-release": "node ./ai-release.js"
+    "ai-commit": "node ./bin/ai-commit.js",
+    "ai-release": "node ./bin/ai-release.js"
   },
   "keywords": [],
   "author": "",

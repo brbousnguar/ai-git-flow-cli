@@ -62,7 +62,7 @@ export function setupCliConsole() {
 
 export function loadConfigAndEnv(metaUrl) {
   const __filename = fileURLToPath(metaUrl);
-  const __dirname = path.dirname(__filename);
+  const __dirname = path.dirname(path.dirname(__filename));
   dotenv.config({ path: path.join(__dirname, ".env"), override: true, quiet: true });
   const config = JSON.parse(readFileSync(path.join(__dirname, "config.json"), "utf8"));
   return { config, __dirname };
