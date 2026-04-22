@@ -135,4 +135,3 @@ It fetches remotes, summarizes changes, then can create the release PR through G
 - `config.json`: provider/model/pricing configuration
 - `BRANCH_NAMING_GUIDE.md`: branch naming rules used in prompts
 - `COMMIT_MESSAGE_GUIDE.md`: commit message rules used in prompts
-- `skills/git-workflow-repo-standards/`: local Codex skill/reference material for this workflow

@@ -53,4 +53,3 @@ config.json + .env + OpenAI/Ollama + Git CLI + GitHub CLI + optional JIRA REST
 - ES modules are used throughout.
 - `.env` is loaded from the repository root.
 - API key errors should refer to `.env`, not `config.json`.
-- Git workflow conventions live in `skills/git-workflow-repo-standards/references/`.

@@ -29,5 +29,4 @@ ai-common.js             Shared config, AI client, console utilities
 config.json              Provider/model/pricing configuration
 BRANCH_NAMING_GUIDE.md   Branch naming prompt rules
 COMMIT_MESSAGE_GUIDE.md  Commit message prompt rules
-skills/                  Local workflow reference skill
 ```
