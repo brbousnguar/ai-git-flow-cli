@@ -13,8 +13,8 @@ When you are inside this repo, prefer these sources in this order:
 
 1. `BRANCH_NAMING_GUIDE.md`
 2. `COMMIT_MESSAGE_GUIDE.md`
-3. `ai-commit.js` and `src/lib/server/commit.ts`
-4. `src/lib/server/git.ts` for PR title/body behavior
+3. `ai-commit.js` for branch, commit, label, and PR behavior
+4. `ai-release.js` for release PR title/body behavior
 5. `README.md` only for usage examples, not for conflicting naming rules
 
 If README examples conflict with the guides or implementation, follow the guides and implementation.

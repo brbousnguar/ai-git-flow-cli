@@ -88,9 +88,5 @@
         "outputPer1M": 16
       }
     }
-  },
-  "muleLogs": {
-    "defaultPath": "D:\\IDE\\AnypointStudio\\plugins\\org.mule.tooling.server.4.10.ee_7.22.0.202511192101\\mule\\logs",
-    "defaultLines": 200
   }
 }

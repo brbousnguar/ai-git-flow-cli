@@ -1,48 +1,33 @@
 # Project Summary
 
-## What it does
-AI-powered Git automation toolset for a Roche development environment. Generates commit messages, release notes, and JIRA deployment messages using AI, with both a web UI and CLI interface over shared business logic.
+## What It Does
 
-## Tech stack
-- **Runtime:** Node.js (ES Modules), TypeScript
-- **Web framework:** Next.js 15 (App Router, React 19)
-- **AI:** OpenAI SDK — supports OpenAI cloud or local Ollama (`http://localhost:11434/v1`)
-- **External integrations:** Git CLI, GitHub CLI (`gh`), JIRA REST API
+AI-assisted Git Bash workflow tools for commit/PR creation and release PR notes.
 
-## Entry points
-- `npm run dev` — Next.js web app at `http://localhost:3000`
-- `ai-commit -t TICKET-123 -m "context"` — CLI commit workflow
-- `ai-release` — CLI release notes workflow
-- `node ai-jira-deploy-message.js` — CLI JIRA deploy message workflow
-- `node ai-mule-logs.js` — CLI MuleSoft log analysis
-- `docker compose up --build -d` — containerized web app
+## Entry Points
 
-## Key workflows
-- **Commit**: stages diff, generates AI commit message variants, user picks one → `git commit`
-- **Release**: summarizes commits since last tag → creates GitHub release via `gh`
-- **JIRA deploy message**: generates deployment message and posts as JIRA comment
-- **Repos**: scans `D:\Projects\RocheBB\Repos` and exposes repo list via API
+- `ai-commit -t TICKET-123 -m "context"`: commit workflow
+- `ai-release`: release PR workflow
+- `npm run ai-commit --`: repo-local fallback
+- `npm run ai-release --`: repo-local fallback
+
+## Runtime
+
+- Node.js ES modules
+- OpenAI SDK
+- `dotenv`
+- Git CLI
+- GitHub CLI (`gh`)
+- Optional JIRA REST enrichment through `.env`
 
 ## Structure
-```
-ai-*.js              CLI scripts (share logic via ai-common.js)
-ai-common.js         Shared config, AI client, console utils for CLI
-src/
-  app/
-    page.tsx         Single-page React UI (commit / release / jira-deploy tabs)
-    api/
-      commit/        Preview + execute commit workflow
-      release/       Preview + execute release workflow
-      jira-deploy/   Preview + execute JIRA deploy message
-      repos/         List discovered repos
-  lib/server/        Core business logic (TypeScript)
-    config.ts        Config loading, repo discovery, env validation
-    git.ts           All git/gh CLI calls
-    openai.ts        AI client factory (Ollama or OpenAI)
-    commit.ts        Commit orchestration
-    release.ts       Release orchestration
-    deploy-message.ts JIRA deploy message orchestration
-    jira.ts          JIRA REST API client
-config.json          AI provider switch (local/cloud) and model config
-.env                 API keys and JIRA credentials
+
+```text
+ai-commit.js             Commit workflow CLI
+ai-release.js            Release PR workflow CLI
+ai-common.js             Shared config, AI client, console utilities
+config.json              Provider/model/pricing configuration
+BRANCH_NAMING_GUIDE.md   Branch naming prompt rules
+COMMIT_MESSAGE_GUIDE.md  Commit message prompt rules
+skills/                  Local workflow reference skill
 ```

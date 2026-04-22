@@ -1,473 +1,138 @@
-# AI Git Tools
+# AI Local Git Flow
 
-AI-powered scripts for generating commit messages and release notes using local Ollama models.
+CLI tools for AI-assisted Git workflows in Git Bash.
 
-## Web App
+## Commands
 
-This repo now also includes a web app built with **Next.js 15 + TypeScript**. It exposes the existing workflows through a browser UI while keeping the original CLI scripts available.
-
-**What the web app supports:**
-- Commit workflow preview and execution from staged changes
-- Release PR preview and creation for `develop` -> `main`
-- JIRA deployment reply preview, publish, comment listing, and deletion
-- Repository selection from `D:\Projects\RocheBB\Repos` before running a workflow
-
-**Run it locally:**
-```bash
-npm install
-npm run dev
-```
-
-Then open:
-```text
-http://localhost:3000
-```
-
-### Run with Docker Compose
-
-Build and start the web app in detached mode:
-
-```bash
-docker compose up --build -d
-```
-
-Stop it later with:
-
-```bash
-docker compose down
-```
-
-**Notes:**
-- The web app runs server-side git, `gh`, OpenAI/Ollama, and JIRA operations from this repo directory
-- It uses the same `.env` and `config.json` configuration as the CLI tools
-- You first choose a repository, then the UI shows changed files and staged files for readiness checks
-- For the commit workflow, changes must already be staged with `git add`
-
-## Prerequisites
-
-1. **For Local Models (Ollama):**
-   - Install [Ollama](https://ollama.ai)
-   - Pull a model: `ollama pull mistral-nemo:12b`
-
-2. **For Cloud Models (OpenAI):**
-   - Get an API key from [OpenAI](https://platform.openai.com/api-keys)
-   - Create a `.env` file from the template:
-     ```bash
-     cp .env.example .env
-     ```
-   - Add your API key to `.env` (see Configuration section below)
-
-## Configuration
-
-### API Key Setup (for Cloud/OpenAI)
-
-**IMPORTANT:** API keys are stored in `.env` (not committed to git) for security.
-
-1. **Create your .env file:**
-   ```bash
-   cp .env.example .env
-   ```
-
-2. **Add your OpenAI API key to `.env`:**
-   ```env
-   OPENAI_API_KEY=sk-your-actual-api-key-here
-   ```
-
-3. **Security notes:**
-   - `.env` is in `.gitignore` and won't be committed
-   - Never commit API keys in code or config files
-   - Each team member needs their own `.env` with their own key
-   - Keep the API key on a single line (no line breaks)
-
-### Provider Configuration
-
-Edit `config.json` to configure your AI provider:
-
-**Local (Ollama) - Default:**
-```json
-{
-  "provider": "local",
-  "local": {
-    "default": "qwen2.5-coder:7b",
-    "models": {
-      "qwen2.5-coder:7b": "Fast, excellent for code",
-      "mistral-nemo:12b": "Slower, more capable"
-    },
-    "baseURL": "http://localhost:11434/v1"
-  },
-  "cloud": {
-    "model": "gpt-4o-mini"
-  }
-}
-```
-
-**Use specific local model:**
-```json
-{
-  "provider": "local:mistral-nemo:12b",
-  ...
-}
-```
-
-**Cloud (OpenAI):**
-```json
-{
-  "provider": "cloud",
-  "local": {
-    "model": "mistral-nemo:12b",
-    "baseURL": "http://localhost:11434/v1"
-  },
-  "cloud": {
-    "model": "gpt-4o-mini"
-  },
-  "muleLogs": {
-    "defaultPath": "D:\\IDE\\AnypointStudio\\plugins\\org.mule.tooling.server.4.10.ee_7.22.0.202511192101\\mule\\logs",
-    "defaultLines": 200
-  }
-}
-```
-
-**Note:** API key is now stored in `.env`, not in `config.json`.
-
-**Available models:**
-
-*Local (Ollama):*
-- `mistral-nemo:12b` - Balanced (European/Mistral AI)
-- `mistral:7b` - Faster
-- `codestral:22b` - Best for code
-- `qwen2.5-coder:7b` - Fast code analysis
-
-*Cloud (OpenAI):*
-- `gpt-4o-mini` - Fast and affordable
-- `gpt-4o` - Most capable
-- `gpt-4-turbo` - Balanced
-
-## Scripts
-
-The preferred terminal commands assume these Git Bash aliases are present in `~/.bashrc`:
+The intended setup is through aliases in `~/.bashrc`:
 
 ```bash
 alias ai-commit='node /d/Projects/RocheBB/Tools/ai-local-git-flow/ai-commit.js'
 alias ai-release='node /d/Projects/RocheBB/Tools/ai-local-git-flow/ai-release.js'
 ```
 
-You can also run the same workflows from this repository with `npm run ai-commit --` and `npm run ai-release --`.
+Reload Git Bash after editing `~/.bashrc`, or run:
 
-### 1. ai-commit - Commit Messages & Branch Names
-
-Generates commit messages and branch names from staged changes, then runs one workflow: rename branch, commit, push, and create PR.
-
-**Usage:**
 ```bash
-# Stage your changes
-git add <files>
-
-# Full workflow (branch + commit + PR)
-ai-commit
-
-# Provide context for better branch naming and commit messages
-ai-commit -m "new feature, add customer request endpoint"
-ai-commit -m "bugfix, fix timeout in payment processing"
-ai-commit -m "refactor authentication module for better security"
-
-# With ticket number and context
-ai-commit -t SFSC-1573 -m "new feature, implement SSO authentication"
-ai-commit -t JIRA-456 -m "bugfix, resolve memory leak in cache"
-
-# With custom labels
-ai-commit -l "bug,enhancement" -m "hotfix, critical security patch"
-
-# Exclude labels (negative prompt)
-ai-commit -m "update RAML customer request type" -n bug
-ai-commit -m "update RAML customer request type" --exclude-label bug
-ai-commit -m "update RAML customer request type" -n -bug
+source ~/.bashrc
 ```
 
-**Command-Line Options:**
-- `-t, --ticket <number>` - Ticket/issue number (e.g., SFSC-1573, JIRA-123)
-- `-m, --message <text>` - Context to guide branch naming and commit message generation
-  - Examples: "new feature, add customer endpoint", "bugfix, fix login timeout", "refactor authentication"
-  - When `-m` is provided, generation uses that message as the exclusive naming intent and does not pull JIRA or diff wording into the prompt
-- `-l, --labels <labels>` - Custom GitHub labels (comma-separated)
-- `-n, --exclude-label <label>` - Exclude a label from AI suggestions and PR creation
-- `--exclude-labels <label>` - Alias of `--exclude-label`
-- `-bug`, `-documentation`, `-enhancement`, etc. - Shorthand exclusion flags
+You can also run the tools from this repository:
 
-**JIRA ticket enrichment (optional):**
-- When `-t/--ticket` is provided, the script can call JIRA API to fetch ticket requirements and recent done-work (comments/worklogs).
-- Add these variables to `.env`: `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`.
-
-**Supported labels:**
-- `bug`
-- `documentation`
-- `enhancement`
-- `duplicate`
-- `help wanted`
-- `good first issue`
-- `question`
-- `wontfix`
-
-**Tips for Using Context (-m flag):**
-- Start with the type: "new feature", "bugfix", "refactor", "hotfix"
-- Add a brief description of what you're doing
-- Example formats:
-  - `"new feature, add customer request endpoint"`
-  - `"bugfix, resolve timeout in payment processing"`
-  - `"refactor authentication for better security"`
-  - `"hotfix, critical database connection issue"`
-
-**Workflow:**
-- Always runs full workflow: rename branch, commit, push, and create PR
-
-**Console output note:**
-- Uses ASCII/professional prefixes (`INFO:`, `OK:`, `WARN:`, `ERROR:`) for Git Bash compatibility.
-
-**Output:**
-```
-Workflow: Rename branch + Commit + Create PR
-
-🌿 Branch Name Variants: (generated in 2.34s)
-
-1. refactor/sfsc-1573-update-customer-mapping
-2. refactor/sfsc-1573-restructure-customer-data
-3. chore/sfsc-1573-update-mapping-logic
-4. refactor/sfsc-1573-improve-mapping-structure
-
-Select branch name (Enter=1, 2-4, or 'n' for new): 1
-
-✅ Selected: refactor/sfsc-1573-update-customer-mapping
-
-🌿 Renaming branch...
-✅ Branch renamed successfully!
-
-📝 Commit Message & Label Variants: (generated in 2.15s)
-
-1. [SFSC-1573] refactor(api): update customer mapping
-   Labels: enhancement
-
-2. [SFSC-1573] refactor(mapping): restructure customer data
-   Labels: enhancement
-
-3. [SFSC-1573] chore(api): update mapping logic
-   Labels: enhancement
-
-4. [SFSC-1573] refactor: improve customer mapping structure
-   Labels: enhancement
-
-Select commit message (Enter=1, 2-4, or 'n' for new): 1
-
-✅ Selected: [SFSC-1573] refactor(api): update customer mapping
-🏷️  Labels: enhancement
-
-📤 Committing changes...
-✅ Committed successfully!
-
-📤 Pushing branch to remote...
-✅ Pushed successfully!
-
-🔀 Creating Pull Request...
-✅ Pull Request created successfully!
-
-⏱️  Total time: 12.45s
-```
-
-### 2. ai-release - Pull Request Notes
-
-Generates PR title and release notes comparing `develop` → `main`.
-
-**Usage:**
 ```bash
-# Without version
-ai-release
-
-# With version tag
-ai-release -v v1.1.23
+npm run ai-commit --
+npm run ai-release --
 ```
 
-**Output:**
-```
-📦 Pull Request: develop → main
+## Install
 
-PR Title: Release v1.1.23
-
-Release Notes:
-## Refactoring
-- Update API dependency to latest version
-```
-
-### 3. ai-mule-logs.js - Mule Log Analyzer
-
-Analyzes Mule ESB/Anypoint Platform logs to identify errors and their root causes.
-
-**Usage:**
 ```bash
-# Analyze runtime logs (default)
-node .gpt-tools/ai-mule-logs.js
-
-# Analyze build logs
-node .gpt-tools/ai-mule-logs.js --type build
-
-# Analyze specific number of lines
-node .gpt-tools/ai-mule-logs.js --lines 500
-
-# Analyze specific log file
-node .gpt-tools/ai-mule-logs.js --file mule-app.log
-
-# Use custom log path
-node .gpt-tools/ai-mule-logs.js --path "C:\Custom\Path\logs"
-
-# Combine options
-node .gpt-tools/ai-mule-logs.js --type runtime --lines 300 --file mule-app.log
-
-# Show help
-node .gpt-tools/ai-mule-logs.js --help
+npm install
 ```
 
-**Options:**
-- `-t, --type`: Log type (`runtime` or `build`) - Default: `runtime`
-- `-l, --lines`: Number of lines to analyze - Default: `200`
-- `-p, --path`: Custom log directory path
-- `-f, --file`: Specific log file to analyze
-- `-h, --help`: Show help message
+## Configuration
 
-**Log Types:**
-- **runtime**: Mule Runtime Engine logs (mule-app.log)
-  - Exception stack traces
-  - Flow execution errors
-  - Component failures
-  - Connection issues
-  - Data transformation errors
-  
-- **build**: Mule Build/Deployment logs
-  - Deployment failures
-  - Application startup errors
-  - Configuration issues
-  - Dependency problems
+Configuration is loaded from `config.json`.
 
-**Output Example:**
-```
-🔍 Mule Log Analyzer
-========================
-📂 Log directory: D:\IDE\AnypointStudio\plugins\...\mule\logs
-📝 Log type: runtime
-📊 Lines to analyze: 200
-📄 Analyzing: mule-app.log
-🕒 Last modified: 2/6/2026, 10:30:45 AM
+For OpenAI cloud usage, create `.env` next to the scripts:
 
-================================================================================
-📊 ANALYSIS RESULTS
-================================================================================
-
-## 🔴 Primary Error
-NullPointerException in customer data transformation flow
-
-## 📍 Error Origin
-Flow: process-customer-order
-Component: Transform Message (line 45)
-File: customer-mapping.dwl
-
-## 🔍 Root Cause Analysis
-The transformation is attempting to access a nested property (customer.address.zipCode)
-but the address object is null for certain customers...
-
-## ✅ Recommended Actions
-1. Add null-safe navigation in DataWeave script
-2. Implement validation before transformation
-3. Add logging to identify which customers lack address data
-...
-
-⏱️  Analysis completed in: 8.23s
-================================================================================
+```env
+OPENAI_API_KEY=sk-your-key
 ```
 
-**Configuration:**
+Optional JIRA enrichment for ticket-aware commit and release generation:
 
-Set your default Mule logs path in `config.json`:
+```env
+JIRA_BASE_URL=https://your-company.atlassian.net
+JIRA_EMAIL=your.email@company.com
+JIRA_API_TOKEN=your-token
+```
+
+Use `config.json` to switch providers:
+
 ```json
 {
-  "muleLogs": {
-    "defaultPath": "D:\\IDE\\AnypointStudio\\plugins\\org.mule.tooling.server.4.10.ee_7.22.0.202511192101\\mule\\logs",
-    "defaultLines": 200
+  "provider": "cloud"
+}
+```
+
+or:
+
+```json
+{
+  "provider": "local",
+  "local": {
+    "default": "qwen2.5-coder:14b",
+    "baseURL": "http://localhost:11434/v1"
   }
 }
 ```
 
-### 4. ai-jira-deploy-message.js - JIRA Deployment Reply
+## ai-commit
 
-Creates a short French reply message for the reporter, injects the latest git tag, and posts it to a JIRA ticket after approval.
+Generates branch-name variants, commit-message variants, GitHub labels, commits staged changes, pushes the branch, and creates a PR.
 
-**Usage:**
-```bash
-# With ticket and reporter
-node .gpt-tools/ai-jira-deploy-message.js -t SFSC-1638 -r "Guilhem"
+Stage files first:
 
-# Same command but publish to JIRA (comment + Mulesoft Version update)
-node .gpt-tools/ai-jira-deploy-message.js -t SFSC-1638 -r "Guilhem" --post
-
-# With ticket only (reporter auto-loaded from JIRA issue)
-node .gpt-tools/ai-jira-deploy-message.js -t SFSC-1638
-
-# List recent comments on a ticket
-node .gpt-tools/ai-jira-deploy-message.js -t SFSC-1638 --list-comments
-
-# Delete a comment by id
-node .gpt-tools/ai-jira-deploy-message.js -t SFSC-1638 --delete --comment-id 123456
-
-# Delete all comments on a ticket (interactive: review each comment)
-node .gpt-tools/ai-jira-deploy-message.js -t SFSC-1638 --delete-all
-```
-
-**Flow:**
-- Reads latest git tag (`git tag --sort=-version:refname`)
-- Suggests a message in terminal
-- `Enter`: post to JIRA
-- `n`: regenerate another variant
-- `q`: cancel
-- Default mode is preview only (no JIRA write)
-- `--post` publishes the comment and updates issue field `Mulesoft Version` (if field exists)
-- Delete mode: list comments, pick an id, and remove it from JIRA
-- Delete-all mode: reviews comments one by one (`Enter` delete, `n` skip, `q` stop)
-
-**Required .env variables:**
-- `JIRA_BASE_URL`
-- `JIRA_EMAIL`
-- `JIRA_API_TOKEN`
-
-## Gitflow Best Practices
-
-**Branch Types:**
-- `feature/` - New features
-- `bugfix/` - Bug fixes
-- `hotfix/` - Urgent production fixes
-- `refactor/` - Code refactoring
-- `chore/` - Maintenance tasks
-- `docs/` - Documentation
-
-**Commit Format:**
-- `[TICKET] type(scope): description`
-- Example: `[SFSC-1573] feat(auth): add SSO support`
-
-## References
-
-- [Conventional Commits Specification](https://www.conventionalcommits.org/en/v1.0.0/)
-
-## Troubleshooting
-
-**Error: Cannot connect to Ollama**
-```bash
-# Start Ollama
-ollama serve
-
-# Pull the model
-ollama pull mistral-nemo:12b
-```
-
-**Error: No staged changes**
 ```bash
 git add <files>
 ```
 
-**Error: Branch not found**
+Run the workflow:
+
 ```bash
-git fetch origin
+ai-commit
 ```
+
+Common options:
+
+```bash
+ai-commit -m "new feature, add customer request endpoint"
+ai-commit -t SFSC-1573 -m "new feature, implement SSO authentication"
+ai-commit -l "bug,enhancement" -m "hotfix, critical security patch"
+ai-commit -m "update RAML customer request type" -n bug
+```
+
+Options:
+
+- `-t, --ticket <number>`: ticket or issue number, for example `SFSC-1573`
+- `-m, --message <text>`: context for branch naming and commit message generation
+- `-l, --labels <labels>`: comma-separated GitHub labels
+- `-n, --exclude-label <label>`: exclude a label from suggestions and PR creation
+- `--exclude-labels <label>`: alias of `--exclude-label`
+- `-bug`, `-documentation`, `-enhancement`: shorthand exclusion flags
+- `-d, --debug`: print LLM request details
+
+## ai-release
+
+Generates release PR title and notes by comparing the development branch with the production branch.
+
+```bash
+ai-release
+ai-release -v v1.1.23
+ai-release -l "release,enhancement"
+```
+
+The script auto-detects:
+
+- production branch: `main` or `master`
+- development branch: `develop` or `dev`
+
+It fetches remotes, summarizes changes, then can create the release PR through GitHub CLI.
+
+## Requirements
+
+- Node.js 18+
+- Git
+- GitHub CLI (`gh`) authenticated for PR creation
+- OpenAI API key or local Ollama-compatible endpoint
+
+## Project Files
+
+- `ai-commit.js`: commit workflow CLI
+- `ai-release.js`: release PR workflow CLI
+- `ai-common.js`: shared config, OpenAI/Ollama client, token usage, console formatting
+- `config.json`: provider/model/pricing configuration
+- `BRANCH_NAMING_GUIDE.md`: branch naming rules used in prompts
+- `COMMIT_MESSAGE_GUIDE.md`: commit message rules used in prompts
+- `skills/git-workflow-repo-standards/`: local Codex skill/reference material for this workflow

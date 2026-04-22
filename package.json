@@ -3,16 +3,11 @@
   "version": "1.0.0",
   "type": "module",
   "private": true,
-  "main": "index.js",
   "bin": {
     "ai-commit": "./ai-commit.js",
     "ai-release": "./ai-release.js"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
     "ai-commit": "node ./ai-commit.js",
     "ai-release": "node ./ai-release.js"
   },
@@ -22,15 +17,6 @@
   "description": "AI-assisted local git workflow tools",
   "dependencies": {
     "dotenv": "^17.2.3",
-    "next": "^15.3.0",
-    "openai": "^6.17.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
-  },
-  "devDependencies": {
-    "@types/node": "^24.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "typescript": "^5.8.0"
+    "openai": "^6.17.0"
   }
 }
