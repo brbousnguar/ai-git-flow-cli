@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execSync } from "child_process";
-import { writeFileSync, unlinkSync } from "fs";
+import { readFileSync, writeFileSync, unlinkSync } from "fs";
 import * as readline from "readline";
 import { tmpdir } from "os";
 import path from "path";
@@ -262,29 +262,44 @@ function constrainBranchLength(branchName, minWords = 3, maxWords = 4) {
 
 const forcedType = detectForcedType(developerMessage);
 
-function buildStandardsSystemMessage({ jsonOnly = false } = {}) {
+function loadPromptFile(fileName) {
+  try {
+    return readFileSync(path.join(__dirname, fileName), "utf8").trim();
+  } catch (error) {
+    console.warn(`## WARN: Could not load ${fileName}: ${error.message}`);
+    return "";
+  }
+}
+
+const branchNamingGuide = loadPromptFile("prompts/branch-naming.md");
+const commitMessageGuide = loadPromptFile("prompts/commit-message.md");
+
+function buildBranchSystemPrompt({ jsonOnly = false } = {}) {
   return `
-Generate git workflow suggestions from the provided context.
+${branchNamingGuide}
 
-Priority:
-1. Developer Context (-m) is the primary intent source when present.
-2. JIRA context is primary only when Developer Context is absent.
-3. Diff is validation/scope context; do not let noisy diff details override explicit intent.
-4. Describe one highest-impact change. Ignore minor cleanup, formatting, and dependency noise.
+Additional workflow rules:
+- Generate branch variants only.
+- Developer Context (-m) is the primary intent source when present.
+- Without Developer Context, use JIRA context as the branch naming source.
+- Do not use git diff for branch naming unless Developer Context explicitly mentions it.
+- Override the guide output rule for this CLI run: return 4 variants, not 1 branch.
 
-Branch standards:
-- Format with ticket: type/${ticketNumber || "TICKET"}-short-kebab-description
-- Format without ticket: type/short-kebab-description
-- Allowed types: feat, fix, refactor, chore, docs, test, perf, hotfix
-- Preserve ticket exactly as provided.
-- Description after ticket should be 3 explicit words; use 4 only if needed.
-- Use lowercase kebab-case after the slash.
-- Avoid filler/vague words: and, or, to, for, with, by, of, in, on, at, from, via, various, multiple, stuff, things, changes.
+Output:
+${jsonOnly ? "- Return ONLY valid JSON. No markdown." : "- Return exactly 4 branch variants in the requested template. No extra commentary."}
+`.trim();
+}
 
-Commit standards:
-- Format: ${ticketNumber ? `[${ticketNumber}] ` : ""}type(scope): imperative summary
-- Scope is optional; use lowercase kebab-case when clear.
-- Summary must be specific, one main idea, under 72 characters, no trailing period.
+function buildCommitSystemPrompt({ jsonOnly = false } = {}) {
+  return `
+${commitMessageGuide}
+
+Additional workflow rules:
+- Generate commit message and label variants only.
+- Developer Context (-m) is the primary intent source when present.
+- Without Developer Context, use git diff as the commit message source.
+- Do not use full JIRA ticket context for commit wording.
+- Override the guide output rule for this CLI run: return 4 variants, not 1 commit.
 
 Label standards:
 - Choose 0-2 labels from: bug, documentation, enhancement, duplicate, help wanted, good first issue, question, wontfix
@@ -292,11 +307,12 @@ Label standards:
 - Never use excluded labels: ${excludedLabels.size > 0 ? Array.from(excludedLabels).join(", ") : "(none)"}
 
 Output:
-${jsonOnly ? "- Return ONLY valid JSON. No markdown." : "- Return exactly 4 variants in the requested template. No extra commentary."}
+${jsonOnly ? "- Return ONLY valid JSON. No markdown." : "- Return exactly 4 commit variants in the requested template. No extra commentary."}
 `.trim();
 }
 
-const effectiveSystemMessage = buildStandardsSystemMessage();
+const branchSystemPrompt = buildBranchSystemPrompt();
+const commitSystemPrompt = buildCommitSystemPrompt();
 
 // Read staged git diff
 let diff = "";
@@ -498,36 +514,69 @@ function buildPrBodyFromCommitLog(rawCommitLog) {
   return ["## Commits Included", ...messages.map((msg) => `- ${msg}`)].join("\n");
 }
 
-function getPromptContext(diffContent = effectiveDiff) {
+function getBranchPromptContext() {
   const trimmedDeveloperMessage = String(developerMessage || "").trim();
   const hasDeveloperContext = trimmedDeveloperMessage.length > 0;
 
   return {
     trimmedDeveloperMessage,
     promptJiraContext: hasDeveloperContext ? "" : jiraContextBlock,
-    promptDiff: hasDeveloperContext ? "" : diffContent,
     excludedContextReason: hasDeveloperContext
-      ? "Developer Context (-m) is present, so JIRA and diff are excluded from generation context."
+      ? "Developer Context (-m) is present, so JIRA context is excluded from branch generation."
       : "",
   };
 }
 
-function buildPrompt() {
+function getCommitPromptContext(diffContent = effectiveDiff) {
+  const trimmedDeveloperMessage = String(developerMessage || "").trim();
+  const hasDeveloperContext = trimmedDeveloperMessage.length > 0;
+
+  return {
+    trimmedDeveloperMessage,
+    promptDiff: hasDeveloperContext ? "" : diffContent,
+    excludedContextReason: hasDeveloperContext
+      ? "Developer Context (-m) is present, so diff context is excluded from commit generation."
+      : "",
+  };
+}
+
+function buildBranchPrompt() {
   const {
     trimmedDeveloperMessage,
     promptJiraContext,
+  } = getBranchPromptContext();
+
+  return `
+Generate 4 different branch name variants.
+
+${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${trimmedDeveloperMessage ? `Developer Context (-m, highest priority):\n${trimmedDeveloperMessage}\n\nUse concrete wording from Developer Context in every branch.\n\n` : ""}${promptJiraContext ? `JIRA Ticket Context:\n${promptJiraContext}\n\n` : ""}
+Output exactly:
+Variant 1:
+Branch: [branch name]
+
+Variant 2:
+Branch: [branch name]
+
+Variant 3:
+Branch: [branch name]
+
+Variant 4:
+Branch: [branch name]
+`;
+}
+
+function buildCommitPrompt() {
+  const {
+    trimmedDeveloperMessage,
     promptDiff,
-  } = getPromptContext();
+  } = getCommitPromptContext();
 
   const jiraIssueTypeLine = jiraIssueType ? `JIRA Issue Type: ${jiraIssueType}\n` : "";
 
   return `
-Generate 4 different variants:
-- Commit: clean Conventional Commit message
-- Branch: Gitflow-compliant branch name
-- Labels: appropriate GitHub labels
+Generate 4 different commit message and label variants.
 
-${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${jiraIssueTypeLine}${trimmedDeveloperMessage ? `Developer Context (-m, highest priority):\n${trimmedDeveloperMessage}\n\nUse concrete wording from Developer Context in every variant. If Developer Context implies a type, keep that type for all variants.\n\n` : ""}${promptJiraContext ? `JIRA Ticket Context:\n${promptJiraContext}\n\n` : ""}${promptDiff ? `Code Changes:
+${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${jiraIssueTypeLine}${trimmedDeveloperMessage ? `Developer Context (-m, highest priority):\n${trimmedDeveloperMessage}\n\nUse concrete wording from Developer Context in every commit message.\n\n` : ""}${promptDiff ? `Code Changes:
 ---
 ${promptDiff}
 ---
@@ -536,76 +585,90 @@ ${promptDiff}
 Output exactly:
 Variant 1:
 Commit: [commit message]
-Branch: [branch name]
 Labels: [label1,label2]
 
 Variant 2:
 Commit: [commit message]
-Branch: [branch name]
 Labels: [label1,label2]
 
 Variant 3:
 Commit: [commit message]
-Branch: [branch name]
 Labels: [label1,label2]
 
 Variant 4:
 Commit: [commit message]
-Branch: [branch name]
 Labels: [label1,label2]
 `;
 }
 
-function parseVariants(outputText) {
-  const strictResults = [];
+function parseBranchVariants(outputText) {
+  const results = [];
   const variants = outputText.split(/Variant \d+:/i).filter(v => v.trim());
 
-  if (variants.length >= 4) {
-    for (let i = 0; i < 4; i++) {
-      const commitMatch = variants[i].match(/Commit:\s*(.+)/i);
-      const branchMatch = variants[i].match(/Branch:\s*(.+)/i);
-      const labelsMatch = variants[i].match(/Labels:\s*(.+)/i);
-
-      let processedLabels = "";
-      if (labelsMatch) {
-        processedLabels = applyJiraIssueTypeLabel(labelsMatch[1]);
-      }
-
-      if (commitMatch && branchMatch) {
-        strictResults.push({
-          commit: commitMatch[1].trim(),
-          branch: constrainBranchLength(normalizeBranchType(branchMatch[1], forcedType)),
-          labels: processedLabels
-        });
-      }
+  for (const variant of variants) {
+    const branchMatch = variant.match(/Branch:\s*(.+)/i);
+    if (branchMatch) {
+      results.push({
+        branch: constrainBranchLength(normalizeBranchType(branchMatch[1], forcedType)),
+      });
     }
   }
 
-  if (strictResults.length >= 4) {
-    return strictResults.slice(0, 4);
-  }
+  if (results.length > 0) return results.slice(0, 4);
 
-  const relaxedResults = [];
-  const relaxedRegex = /Commit:\s*(.+?)\r?\nBranch:\s*(.+?)\r?\nLabels:\s*(.*?)(?=\r?\n(?:Variant\s+\d+:|Commit:)|$)/gis;
-  let match;
-
-  while ((match = relaxedRegex.exec(outputText)) !== null) {
-    const processedLabels = (match[3] || "")
-      .split(',')
-      .map(label => label.trim())
-      .filter(label => label.length > 0)
-      .join(',');
-    relaxedResults.push({
-      commit: match[1].trim(),
-      branch: constrainBranchLength(normalizeBranchType(match[2], forcedType)),
-      labels: applyJiraIssueTypeLabel(processedLabels)
-    });
-  }
-
-  return relaxedResults.slice(0, 4);
+  return String(outputText || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^(feat|fix|refactor|chore|docs|test|perf|hotfix)\//i.test(line))
+    .map((branch) => ({
+      branch: constrainBranchLength(normalizeBranchType(branch, forcedType)),
+    }))
+    .slice(0, 4);
 }
 
-function parseJsonVariants(outputText) {
+function parseCommitVariants(outputText) {
+  const results = [];
+  const variants = outputText.split(/Variant \d+:/i).filter(v => v.trim());
+
+  for (const variant of variants) {
+    const commitMatch = variant.match(/Commit:\s*(.+)/i);
+    const labelsMatch = variant.match(/Labels:\s*(.+)/i);
+    if (commitMatch) {
+      results.push({
+        commit: commitMatch[1].trim(),
+        labels: applyJiraIssueTypeLabel(labelsMatch ? labelsMatch[1] : ""),
+      });
+    }
+  }
+
+  return results.slice(0, 4);
+}
+
+function parseJsonBranchVariants(outputText) {
+  const cleaned = outputText
+    .replace(/```json/gi, "```")
+    .replace(/```/g, "")
+    .trim();
+  const start = cleaned.indexOf("[");
+  const end = cleaned.lastIndexOf("]");
+  if (start === -1 || end === -1 || end <= start) return [];
+
+  try {
+    const parsed = JSON.parse(cleaned.slice(start, end + 1));
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((item) => ({
+        branch: constrainBranchLength(normalizeBranchType(String(item?.branch || "").trim(), forcedType)),
+      }))
+      .filter((item) => item.branch)
+      .slice(0, 4);
+  } catch {
+    return [];
+  }
+}
+
+function parseJsonCommitVariants(outputText) {
   const cleaned = outputText
     .replace(/```json/gi, "```")
     .replace(/```/g, "")
@@ -621,7 +684,6 @@ function parseJsonVariants(outputText) {
     return parsed
       .map((item) => ({
         commit: String(item?.commit || "").trim(),
-        branch: constrainBranchLength(normalizeBranchType(String(item?.branch || "").trim(), forcedType)),
         labels: String(item?.labels || "")
           .split(",")
           .map(label => label.trim())
@@ -632,30 +694,46 @@ function parseJsonVariants(outputText) {
         ...item,
         labels: applyJiraIssueTypeLabel(item.labels),
       }))
-      .filter((item) => item.commit && item.branch)
+      .filter((item) => item.commit)
       .slice(0, 4);
   } catch {
     return [];
   }
 }
 
-function buildRecoveryPrompt(diffContent) {
+function buildBranchRecoveryPrompt() {
   const {
     trimmedDeveloperMessage,
     promptJiraContext,
+  } = getBranchPromptContext();
+
+  return `
+Return ONLY valid JSON. No markdown.
+Generate exactly 4 objects in an array with key: branch.
+
+JSON schema:
+[{"branch":"..."}]
+
+${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${trimmedDeveloperMessage ? `Developer Context (-m, highest priority):\n${trimmedDeveloperMessage}\n\n` : ""}${promptJiraContext ? `JIRA Ticket Context:\n${promptJiraContext}\n\n` : ""}
+`;
+}
+
+function buildCommitRecoveryPrompt() {
+  const {
+    trimmedDeveloperMessage,
     promptDiff,
-  } = getPromptContext(diffContent);
+  } = getCommitPromptContext();
 
   const jiraIssueTypeLine = jiraIssueType ? `JIRA Issue Type: ${jiraIssueType}\n` : "";
 
   return `
 Return ONLY valid JSON. No markdown.
-Generate exactly 4 objects in an array with keys: commit, branch, labels.
+Generate exactly 4 objects in an array with keys: commit, labels.
 
 JSON schema:
-[{"commit":"...","branch":"...","labels":"label1,label2"}]
+[{"commit":"...","labels":"label1,label2"}]
 
-${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${jiraIssueTypeLine}${trimmedDeveloperMessage ? `Developer Context (-m, highest priority):\n${trimmedDeveloperMessage}\n\nUse concrete wording from Developer Context in every object.\n\n` : ""}${promptJiraContext ? `JIRA Ticket Context:\n${promptJiraContext}\n\n` : ""}${promptDiff ? `Code Changes:
+${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${jiraIssueTypeLine}${trimmedDeveloperMessage ? `Developer Context (-m, highest priority):\n${trimmedDeveloperMessage}\n\n` : ""}${promptDiff ? `Code Changes:
 ---
 ${promptDiff}
 ---
@@ -680,14 +758,13 @@ function printContextWindow(label, value) {
   console.log(`## DEBUG: --- End Context Window: ${label} ---`);
 }
 
-function printContextWindows({ userPrompt, recoveryPrompt = "" }) {
+function printBranchContextWindows({ userPrompt, recoveryPrompt = "" }) {
   const {
     trimmedDeveloperMessage,
     promptJiraContext,
-    promptDiff,
     excludedContextReason,
-  } = getPromptContext();
-  console.log("\n## DEBUG: === Context Windows ===");
+  } = getBranchPromptContext();
+  console.log("\n## DEBUG: === Branch Context Windows ===");
   console.log(`## DEBUG: ticket=${ticketNumber || "(none)"}`);
   console.log(`## DEBUG: jiraIssueType=${jiraIssueType || "(none)"}`);
   console.log(`## DEBUG: jiraIssueTypeLabel=${labelFromJiraIssueType(jiraIssueType) || "(none)"}`);
@@ -696,63 +773,136 @@ function printContextWindows({ userPrompt, recoveryPrompt = "" }) {
   if (excludedContextReason) {
     console.log(`## DEBUG: ${excludedContextReason}`);
   }
-  printContextWindow("effective system prompt", effectiveSystemMessage);
+  printContextWindow("branch system prompt", branchSystemPrompt);
   printContextWindow("developer context", trimmedDeveloperMessage);
   if (promptJiraContext) {
     printContextWindow("JIRA ticket context", promptJiraContext);
   } else if (jiraContextBlock) {
-    console.log("\n## DEBUG: JIRA ticket context excluded from prompt");
+    console.log("\n## DEBUG: JIRA ticket context excluded from branch prompt");
   }
+  printContextWindow("branch user prompt", userPrompt);
+  if (recoveryPrompt) {
+    printContextWindow("branch recovery user prompt", recoveryPrompt);
+  }
+  console.log("\n## DEBUG: === End Branch Context Windows ===\n");
+}
+
+function printCommitContextWindows({ userPrompt, recoveryPrompt = "" }) {
+  const {
+    trimmedDeveloperMessage,
+    promptDiff,
+    excludedContextReason,
+  } = getCommitPromptContext();
+  console.log("\n## DEBUG: === Commit Context Windows ===");
+  console.log(`## DEBUG: ticket=${ticketNumber || "(none)"}`);
+  console.log(`## DEBUG: jiraIssueType=${jiraIssueType || "(none)"}`);
+  console.log(`## DEBUG: jiraIssueTypeLabel=${labelFromJiraIssueType(jiraIssueType) || "(none)"}`);
+  console.log(`## DEBUG: provider=${provider}`);
+  console.log(`## DEBUG: model=${modelName}`);
+  if (excludedContextReason) {
+    console.log(`## DEBUG: ${excludedContextReason}`);
+  }
+  printContextWindow("commit system prompt", commitSystemPrompt);
+  printContextWindow("developer context", trimmedDeveloperMessage);
   if (promptDiff) {
     printContextWindow("effective staged diff", promptDiff);
   } else if (diff.trim()) {
-    console.log("\n## DEBUG: staged diff excluded from prompt");
+    console.log("\n## DEBUG: staged diff excluded from commit prompt");
   }
-  printContextWindow("primary user prompt", userPrompt);
+  printContextWindow("commit user prompt", userPrompt);
   if (recoveryPrompt) {
-    printContextWindow("recovery user prompt", recoveryPrompt);
+    printContextWindow("commit recovery user prompt", recoveryPrompt);
   }
-  console.log("\n## DEBUG: === End Context Windows ===\n");
+  console.log("\n## DEBUG: === End Commit Context Windows ===\n");
 }
 
-async function generateVariants() {
+async function generateBranchVariants() {
   const genStartTime = Date.now();
-  const primaryPrompt = buildPrompt();
+  const primaryPrompt = buildBranchPrompt();
   if (debugContext) {
-    printContextWindows({ userPrompt: primaryPrompt });
+    printBranchContextWindows({ userPrompt: primaryPrompt });
   }
   const result = await generateText({
     client,
     provider,
     modelName,
-    systemPrompt: effectiveSystemMessage,
+    systemPrompt: branchSystemPrompt,
     userPrompt: primaryPrompt,
     temperature: 0.2,
     debug,
-    debugLabel: "variants-primary",
+    debugLabel: "branch-variants-primary",
   });
   const genElapsed = ((Date.now() - genStartTime) / 1000).toFixed(2);
 
   printTokenUsage(result.usage, { provider, modelName, config });
 
-  let results = parseVariants(result.text);
+  let results = parseBranchVariants(result.text);
   if (results.length < 4) {
-    const recoveryPrompt = buildRecoveryPrompt(effectiveDiff);
+    const recoveryPrompt = buildBranchRecoveryPrompt();
     if (debugContext) {
-      printContextWindows({ userPrompt: primaryPrompt, recoveryPrompt });
+      printBranchContextWindows({ userPrompt: primaryPrompt, recoveryPrompt });
     }
     const recovery = await generateText({
       client,
       provider,
       modelName,
-      systemPrompt: buildStandardsSystemMessage({ jsonOnly: true }),
+      systemPrompt: buildBranchSystemPrompt({ jsonOnly: true }),
       userPrompt: recoveryPrompt,
       temperature: 0.1,
       debug,
-      debugLabel: "variants-recovery",
+      debugLabel: "branch-variants-recovery",
     });
     printTokenUsage(recovery.usage, { provider, modelName, config });
-    results = parseJsonVariants(recovery.text);
+    results = parseJsonBranchVariants(recovery.text);
+  }
+
+  results = prioritizeVariantsByDeveloperMessage(results);
+
+  if (results.length === 0 && provider === "local") {
+    console.log("## WARN: Model output format was not parseable. Try a stronger local model or smaller staged diff.");
+  }
+
+  return { results, generationTime: genElapsed };
+}
+
+async function generateCommitVariants() {
+  const genStartTime = Date.now();
+  const primaryPrompt = buildCommitPrompt();
+  if (debugContext) {
+    printCommitContextWindows({ userPrompt: primaryPrompt });
+  }
+  const result = await generateText({
+    client,
+    provider,
+    modelName,
+    systemPrompt: commitSystemPrompt,
+    userPrompt: primaryPrompt,
+    temperature: 0.2,
+    debug,
+    debugLabel: "commit-variants-primary",
+  });
+  const genElapsed = ((Date.now() - genStartTime) / 1000).toFixed(2);
+
+  printTokenUsage(result.usage, { provider, modelName, config });
+
+  let results = parseCommitVariants(result.text);
+  if (results.length < 4) {
+    const recoveryPrompt = buildCommitRecoveryPrompt();
+    if (debugContext) {
+      printCommitContextWindows({ userPrompt: primaryPrompt, recoveryPrompt });
+    }
+    const recovery = await generateText({
+      client,
+      provider,
+      modelName,
+      systemPrompt: buildCommitSystemPrompt({ jsonOnly: true }),
+      userPrompt: recoveryPrompt,
+      temperature: 0.1,
+      debug,
+      debugLabel: "commit-variants-recovery",
+    });
+    printTokenUsage(recovery.usage, { provider, modelName, config });
+    results = parseJsonCommitVariants(recovery.text);
   }
 
   results = prioritizeVariantsByDeveloperMessage(results);
@@ -850,7 +1000,7 @@ async function run() {
         if (developerMessage?.trim()) {
           console.log("## OK: JIRA ticket context loaded for issue type and labels; -m remains the generation priority.");
         } else {
-          console.log("## OK: JIRA ticket context loaded and will be used for branch/commit generation.");
+          console.log("## OK: JIRA ticket context loaded for branch generation and label correction.");
         }
         if (jiraLabel) {
           console.log(`## INFO: JIRA issue type '${jiraIssueType}' maps to GitHub label '${jiraLabel}'.`);
@@ -867,7 +1017,7 @@ async function run() {
     
     // Step 1: Select branch name
       while (!selectedBranch) {
-        const { results: variants, generationTime } = await generateVariants();
+	        const { results: variants, generationTime } = await generateBranchVariants();
         if (variants.length === 0) {
           console.error("## ERROR: Failed to generate variants");
           process.exit(1);
@@ -894,7 +1044,7 @@ async function run() {
 
     // Step 3: Select commit message and labels
     while (!selectedCommit) {
-      const { results: variants, generationTime } = await generateVariants();
+	      const { results: variants, generationTime } = await generateCommitVariants();
       if (variants.length === 0) {
         console.error("## ERROR: Failed to generate variants");
         process.exit(1);

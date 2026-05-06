@@ -106,6 +106,11 @@ Options:
 
 When `-m, --message` is provided, that developer context is treated as the highest-priority intent. JIRA and diff context are skipped for generation so naming and commit wording stay aligned with the supplied message.
 
+Branch and commit generation use split context windows:
+
+- Branch names use `prompts/branch-naming.md` plus JIRA ticket context, unless `-m` is provided.
+- Commit messages use `prompts/commit-message.md` plus the staged git diff, unless `-m` is provided.
+
 When a JIRA ticket is provided, the ticket type is used to correct GitHub labels: Task/Tache maps to `enhancement`, and Bug maps to `bug`. Explicit `-l, --labels` values still take priority.
 
 ## ai-release
