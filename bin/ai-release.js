@@ -17,7 +17,7 @@ setupCliConsole();
 const args = process.argv.slice(2);
 let version = null;
 let labels = null;
-let jiraTicketContext = "";
+let debug = false;
 let ticketCommitContext = "";
 
 function parseLabelList(rawLabels) {
@@ -50,6 +50,8 @@ for (let i = 0; i < args.length; i++) {
   } else if ((args[i] === "-l" || args[i] === "--labels") && args[i + 1]) {
     labels = normalizeLabels(args[i + 1]);
     i++;
+  } else if (args[i] === "-d" || args[i] === "--debug") {
+    debug = true;
   }
 }
 
@@ -153,13 +155,13 @@ const baseBranchName = prodBranch.replace("origin/", "");
 const headBranchName = devBranch.replace("origin/", "");
 
 try {
-  console.log("INFO: Fetching latest branches from origin before diff...");
+  console.log("INFO: Fetching latest branches from origin before release comparison...");
   execSync("git fetch origin --prune", { stdio: "inherit" });
 
   execSync(`git rev-parse --verify origin/${baseBranchName}`, { encoding: "utf8", stdio: "pipe" });
   execSync(`git rev-parse --verify origin/${headBranchName}`, { encoding: "utf8", stdio: "pipe" });
 } catch (error) {
-  console.error("ERROR: Failed to fetch/verify remote branches before release diff:", error.message);
+  console.error("ERROR: Failed to fetch/verify remote branches before release comparison:", error.message);
   process.exit(1);
 }
 
@@ -167,24 +169,19 @@ prodBranch = `origin/${baseBranchName}`;
 devBranch = `origin/${headBranchName}`;
 console.log(`ℹ️  Comparing: ${devBranch} → ${prodBranch}`);
 
-// Get diff between production and develop branches
-let diff = "";
+// Get commit messages between production and develop branches
 let commitLog = "";
 try {
-  // Get the actual diff
-  diff = execSync(`git diff ${prodBranch}...${devBranch}`, { encoding: "utf8" });
-  
-  // Get commit messages for context
   commitLog = execSync(`git log ${prodBranch}..${devBranch} --oneline --no-merges`, { 
     encoding: "utf8" 
   });
 } catch (error) {
-  console.error(`❌ Failed to get git diff between ${prodBranch} and ${devBranch}`);
+  console.error(`❌ Failed to get commit log between ${prodBranch} and ${devBranch}`);
   console.error("   Try: git fetch origin");
   process.exit(1);
 }
 
-if (!diff.trim() && !commitLog.trim()) {
+if (!commitLog.trim()) {
   console.error("❌ No changes between main and develop");
   process.exit(1);
 }
@@ -202,41 +199,6 @@ function buildPrBodyFromCommitLog(rawCommitLog) {
   }
 
   return ["## Commits Included", ...messages.map((msg) => `- ${msg}`)].join("\n");
-}
-
-function normalizeJiraBaseUrl(rawUrl) {
-  if (!rawUrl) return "";
-  const trimmed = String(rawUrl).trim();
-  return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
-}
-
-function adfToPlainText(node) {
-  if (!node) return "";
-  if (typeof node === "string") return node;
-  if (Array.isArray(node)) return node.map((item) => adfToPlainText(item)).join("");
-  if (node.type === "text") return node.text || "";
-  if (node.type === "hardBreak") return "\n";
-
-  const content = adfToPlainText(node.content || []);
-  if (["paragraph", "heading", "listItem", "bulletList", "orderedList", "tableRow"].includes(node.type)) {
-    return `${content}\n`;
-  }
-  return content;
-}
-
-function normalizeMultilineText(value, maxLength = 1000) {
-  const text = String(value || "")
-    .replace(/\r/g, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength)}\n...[truncated]`;
-}
-
-function extractJiraKeysFromCommitLog(rawCommitLog) {
-  const matches = String(rawCommitLog || "").match(/\b[A-Z][A-Z0-9]+-\d+\b/g) || [];
-  return [...new Set(matches)];
 }
 
 function buildTicketCommitContext(rawCommitLog) {
@@ -269,53 +231,6 @@ function buildTicketCommitContext(rawCommitLog) {
     linesOut.push(`- ${key}: ${uniq.join(" | ")}`);
   }
   return linesOut.join("\n");
-}
-
-async function fetchJiraTicketsContext(ticketKeys, config) {
-  if (!Array.isArray(ticketKeys) || ticketKeys.length === 0) return "";
-  if (typeof fetch !== "function") {
-    console.log("WARN: Node fetch is unavailable; skipping JIRA enrichment.");
-    return "";
-  }
-
-  const jiraBaseUrl = normalizeJiraBaseUrl(process.env.JIRA_BASE_URL || config?.jira?.baseUrl);
-  const jiraEmail = process.env.JIRA_EMAIL || config?.jira?.email;
-  const jiraApiToken = process.env.JIRA_API_TOKEN || config?.jira?.apiToken;
-
-  if (!jiraBaseUrl || !jiraEmail || !jiraApiToken) {
-    console.log("INFO: JIRA credentials not configured; skipping ticket enrichment.");
-    return "";
-  }
-
-  const auth = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString("base64");
-  const headers = {
-    Authorization: `Basic ${auth}`,
-    Accept: "application/json",
-  };
-
-  const responses = await Promise.all(
-    ticketKeys.map(async (ticketKey) => {
-      try {
-        const issueUrl = `${jiraBaseUrl}/rest/api/3/issue/${encodeURIComponent(ticketKey)}?fields=summary,description,status,issuetype`;
-        const response = await fetch(issueUrl, { method: "GET", headers });
-        if (!response.ok) {
-          return `- ${ticketKey}: [Could not load ticket details: HTTP ${response.status}]`;
-        }
-        const issue = await response.json();
-        const fields = issue?.fields || {};
-        const summary = normalizeMultilineText(fields.summary || "No summary", 240);
-        const type = fields?.issuetype?.name || "Unknown";
-        const status = fields?.status?.name || "Unknown";
-        const description = normalizeMultilineText(adfToPlainText(fields.description), 450);
-        const descPart = description ? `\n  Description: ${description.replace(/\n/g, " ")}` : "";
-        return `- ${ticketKey}: ${summary}\n  Type: ${type}; Status: ${status}${descPart}`;
-      } catch (error) {
-        return `- ${ticketKey}: [Could not load ticket details: ${error.message}]`;
-      }
-    })
-  );
-
-  return responses.join("\n");
 }
 
 function buildReleasePrompt() {
@@ -355,9 +270,6 @@ Example bad format (avoid):
 Commits: ${commitLog}
 Ticket-to-commit mapping:
 ${ticketCommitContext || "(none)"}
-JIRA ticket details:
-${jiraTicketContext || "(not available)"}
-Diff: ${diff.slice(0, 8000)}
 ---END ANALYSIS DATA---
 `;
 }
@@ -385,6 +297,8 @@ async function generatePRDetails(variantNumber = 1) {
     modelName,
     userPrompt: buildReleasePrompt() + variantInstruction,
     temperature: 0.7,
+    debug,
+    debugLabel: `release-variant-${variantNumber}`,
   });
 
   printTokenUsage(result.usage, { provider, modelName, config });
@@ -412,12 +326,8 @@ async function run() {
   console.log(`🤖 Using model: ${modelName} (${provider})`);
   
   try {
-    const jiraKeys = extractJiraKeysFromCommitLog(commitLog);
     ticketCommitContext = buildTicketCommitContext(commitLog);
-    if (jiraKeys.length > 0) {
-      console.log(`INFO: Loading JIRA details for ${jiraKeys.length} ticket(s)...`);
-      jiraTicketContext = await fetchJiraTicketsContext(jiraKeys, config);
-    } else {
+    if (!ticketCommitContext) {
       console.log("INFO: No JIRA ticket IDs found in commit range.");
     }
 

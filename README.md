@@ -40,7 +40,7 @@ For OpenAI cloud usage, create `.env` next to the scripts:
 OPENAI_API_KEY=sk-your-key
 ```
 
-Optional JIRA enrichment for ticket-aware commit and release generation:
+Optional JIRA enrichment for ticket-aware commit generation:
 
 ```env
 JIRA_BASE_URL=https://your-company.atlassian.net
@@ -121,6 +121,7 @@ Generates release PR title and notes by comparing the development branch with th
 ai-release
 ai-release -v v1.1.23
 ai-release -l "release,enhancement"
+ai-release --debug
 ```
 
 The script auto-detects:
@@ -128,7 +129,9 @@ The script auto-detects:
 - production branch: `main` or `master`
 - development branch: `develop` or `dev`
 
-It fetches remotes, summarizes changes, then can create the release PR through GitHub CLI.
+It fetches remotes, summarizes commit messages grouped by ticket ID, then can create the release PR through GitHub CLI.
+
+Use `-d, --debug` to print release LLM request details.
 
 ## Requirements
 
@@ -144,7 +147,7 @@ It fetches remotes, summarizes changes, then can create the release PR through G
 - `dotenv`
 - Git CLI
 - GitHub CLI (`gh`)
-- Optional JIRA REST enrichment through `.env`
+- Optional JIRA REST enrichment for commit generation through `.env`
 
 ## Project Files
 
