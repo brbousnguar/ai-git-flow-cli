@@ -1,197 +1,73 @@
-# Commit Message Best Practices (AI Contract)
+# Commit Message Contract
 
-This document defines strict rules for generating Git commit messages.
-The AI MUST follow these rules exactly.
+Generate one Git commit message that follows this contract exactly.
 
----
+## Format
 
-## 1. Format
+With ticket:
 
-<type>(<scope>): <short summary>
+```text
+[TICKET] <type>(<scope>): <summary>
+```
 
-[optional body]
+Without ticket:
 
-Example:
+```text
+<type>(<scope>): <summary>
+```
 
-fix(cart): correct tax rounding logic  
-feat(checkout): add loyalty discount validation  
-refactor(price-service): simplify discount calculation  
+If no clear scope exists, omit it:
 
----
-
-## 2. Allowed Types
-
-The <type> MUST be one of:
-
-feat      → new feature  
-fix       → bug fix  
-refactor  → internal restructure without behavior change  
-chore     → config, dependency, tooling updates  
-docs      → documentation only  
-test      → tests only  
-perf      → performance improvement  
-hotfix    → urgent production fix  
-
-No other values are allowed.
-
----
-
-## 3. Scope Rules
-
-- Scope represents the main module or business area
-- lowercase
-- kebab-case
-- no spaces
+```text
+fix: handle null API response
+```
 
 Examples:
 
-cart  
-checkout  
-order-api  
-price-service  
-case-flow  
-opportunity-flow  
+```text
+[SFSC-1591] fix(cart): correct discount rounding
+feat(checkout): add coupon validation
+refactor(price-service): simplify discount logic
+```
 
-If no clear scope exists, omit parentheses:
+## Rules
 
-fix: handle null response in API
+- Allowed types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `perf`, `hotfix`.
+- Scope is optional and must be lowercase kebab-case when present.
+- Summary must be imperative, specific, and under 72 characters.
+- Use one main idea only.
+- Do not add a trailing period.
+- Describe the highest-impact change.
+- Prefer developer-provided intent over noisy diff details.
+- Ignore secondary refactors, formatting, and small version bumps when a more important change exists.
+- Do not use vague wording: `stuff`, `things`, `various`, `multiple`, `update everything`, `fix everything`, `misc`.
 
----
+## Type Heuristics
 
-## 4. Summary Rules
+- `fix`: bug fix, prevention, null handling, error handling.
+- `feat`: new behavior, endpoint, integration, capability.
+- `refactor`: restructure without behavior change.
+- `chore`: dependency, config, tooling, maintenance only.
+- `docs`: documentation only.
+- `test`: tests only.
+- `perf`: performance improvement.
+- `hotfix`: urgent production fix.
 
-- Imperative mood (present tense)
-- Max 72 characters
-- No trailing period
-- Clear and specific
-- One main idea only
+## Optional Body
 
-Good:
+Add a body only when it clarifies important context.
 
-fix(cart): handle null tax response  
-feat(order-api): add order validation endpoint  
+- Explain why the change was made.
+- Summarize what changed at a high level.
+- Mention impact when relevant.
+- Keep body lines at 100 characters or less.
 
-Bad:
+For breaking changes, end the body with:
 
-fixed bug in cart  
-updating various things  
-made some improvements  
-
----
-
-## 5. Body Rules (Optional)
-
-Add a body only if clarification is needed.
-
-Structure:
-
-- Why the change was made
-- What was changed (high level)
-- Impact (if relevant)
-
-Example:
-
-fix(cart): handle null tax response
-
-Prevent crash when tax service returns null.
-Add fallback value and improve error logging.
-
-Body lines must be <= 100 characters.
-
----
-
-## 6. Priority Rule
-
-When multiple changes exist:
-
-Select the change with the highest business impact.
-
-Ignore:
-- minor refactors
-- formatting
-- small version bumps
-
-Example:
-
-If commit contains:
-- bug fix
-- dependency update
-- code cleanup
-
-The message MUST describe the bug fix.
-
----
-
-## 7. Forbidden Words
-
-Commit summary MUST NOT contain:
-
-stuff  
-things  
-various  
-multiple  
-update everything  
-fix everything  
-misc  
-
-Avoid vague wording.
-
----
-
-## 8. Heuristics for Type Detection
-
-If diff contains bug fix keywords (fix, prevent, handle, null-check):  
-→ type = fix  
-
-If diff adds new behavior or endpoint:  
-→ type = feat  
-
-If diff restructures without changing behavior:  
-→ type = refactor  
-
-If diff updates dependencies or config only:  
-→ type = chore  
-
-If diff improves speed or reduces computation:  
-→ type = perf  
-
----
-
-## 9. Breaking Changes
-
-If change is breaking:
-
-Add:
-
+```text
 BREAKING CHANGE: <description>
+```
 
-At the end of the body.
+## Output
 
-Example:
-
-feat(order-api): change response structure
-
-BREAKING CHANGE: remove legacy orderId field
-
----
-
-## 10. Output Rules
-
-- Return only the commit message
-- No explanations
-- No markdown
-- No surrounding text
-
----
-
-## 11. Examples
-
-fix(cart): correct rounding error  
-feat(checkout): add coupon validation  
-refactor(price-service): simplify discount logic  
-chore(deps): update node to v20  
-docs(api): update order endpoint documentation  
-
----
-
-End of contract.
+Return only the commit message. No markdown, explanation, list, or surrounding text.

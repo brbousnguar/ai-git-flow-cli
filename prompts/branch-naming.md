@@ -1,174 +1,52 @@
-# Branch Naming Best Practices (AI Contract)
+# Branch Naming Contract
 
-This document defines strict rules for generating Git branch names.
-The AI MUST follow these rules exactly.
+Generate one Git branch name that follows this contract exactly.
 
----
+## Format
 
-## 1. Canonical Format
+With ticket:
 
-<type>/<ticket>-<verb>-<target>
+```text
+<type>/<TICKET>-<verb>-<target>
+```
 
-Example:
+Without ticket:
 
-fix/SFSC-1591-fix-discount-rule  
-feat/SFSC-2041-add-loyalty-banner  
-refactor/SFSC-332-clean-cart-service  
+```text
+<type>/<verb>-<target>
+```
 
----
+Examples:
 
-## 2. Allowed Types
+```text
+fix/SFSC-1591-fix-discount-rule
+feat/SFSC-2041-add-loyalty-banner
+refactor/SFSC-332-refactor-cart-service
+```
 
-The <type> MUST be one of:
+## Rules
 
-- feat      → new feature
-- fix       → bug fix
-- refactor  → restructure without behavior change
-- chore     → config, dependency, tooling
-- docs      → documentation only
-- test      → tests only
-- perf      → performance improvement
-- hotfix    → urgent production fix
+- Allowed types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `perf`, `hotfix`.
+- Allowed verbs: `add`, `fix`, `remove`, `update`, `rename`, `refactor`, `simplify`, `migrate`, `optimize`, `enable`, `disable`.
+- Preserve the ticket exactly as provided, including case.
+- Use lowercase kebab-case after the slash.
+- Prefer 3 explicit words after the ticket; use 4 only when needed for clarity.
+- Describe one highest-impact change.
+- Prefer developer-provided intent over noisy diff details.
+- Ignore secondary refactors, formatting, and small version bumps when a more important change exists.
+- Do not use vague or filler words: `and`, `or`, `various`, `multiple`, `stuff`, `things`, `changes`, `update-everything`, `refactor-and-update`.
 
-No other values are allowed.
+## Type Heuristics
 
----
+- `fix`: bug fix, prevention, null handling, error handling.
+- `feat`: new behavior, endpoint, integration, capability.
+- `refactor`: restructure without behavior change.
+- `chore`: dependency, config, tooling, maintenance only.
+- `docs`: documentation only.
+- `test`: tests only.
+- `perf`: performance improvement.
+- `hotfix`: urgent production fix.
 
-## 3. Allowed Verbs (imperative form)
+## Output
 
-The <verb> MUST be one of:
-
-add  
-fix  
-remove  
-update  
-rename  
-refactor  
-simplify  
-migrate  
-optimize  
-enable  
-disable  
-
-Verb must always be lowercase.
-
----
-
-## 4. Target Naming Rules
-
-- Use short, meaningful nouns
-- lowercase
-- kebab-case
-- no filler words
-
-Good:
-
-cart  
-checkout  
-discount-rule  
-order-api  
-price-service  
-case-flow  
-
-Bad:
-
-stuff  
-things  
-various-changes  
-multiple-updates  
-
----
-
-## 5. Length Constraint
-
-- Maximum 6 words after the ticket
-- Prefer 3–5 words
-
-Good:
-
-fix/SFSC-1591-fix-cart-tax  
-
-Bad:
-
-feat/SFSC-1591-update-versions-and-refactor-discount-calculations  
-
----
-
-## 6. Priority Rule
-
-When multiple changes exist:
-
-Select the change with the HIGHEST business or user impact.
-
-Ignore secondary refactors or version bumps.
-
-Example:
-
-If diff contains:
-- refactor
-- dependency update
-- bug fix
-
-Branch name must describe the bug fix.
-
----
-
-## 7. Forbidden Words
-
-The branch name MUST NOT contain:
-
-and  
-various  
-multiple  
-stuff  
-things  
-changes  
-update-everything  
-refactor-and-update  
-
-Only ONE main idea is allowed.
-
----
-
-## 8. Type Selection Heuristics
-
-If diff shows bug fix keywords (fix, prevent, handle, null-check):  
-→ type = fix  
-
-If diff adds new behavior or endpoint:  
-→ type = feat  
-
-If diff moves or restructures code only:  
-→ type = refactor  
-
-If diff only updates versions or configs:  
-→ type = chore  
-
----
-
-## 9. Ticket Formatting
-
-- Keep ticket exactly as provided
-- Preserve case (e.g., SFSC-1591)
-
----
-
-## 10. Output Rules
-
-- Return ONLY one branch name
-- No explanations
-- No lists
-- No surrounding text
-
----
-
-## 11. Examples
-
-fix/SFSC-1591-fix-discount-rule  
-feat/SFSC-2041-add-cart-validation  
-refactor/SFSC-330-clean-price-service  
-chore/SFSC-88-update-node-version  
-
----
-
-End of contract.
+Return only the branch name. No markdown, explanation, list, or surrounding text.

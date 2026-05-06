@@ -102,6 +102,11 @@ Options:
 - `--exclude-labels <label>`: alias of `--exclude-label`
 - `-bug`, `-documentation`, `-enhancement`: shorthand exclusion flags
 - `-d, --debug`: print LLM request details
+- `--debug-context`: print context windows used for generation
+
+When `-m, --message` is provided, that developer context is treated as the highest-priority intent. JIRA and diff context are skipped for generation so naming and commit wording stay aligned with the supplied message.
+
+When a JIRA ticket is provided, the ticket type is used to correct GitHub labels: Task/Tache maps to `enhancement`, and Bug maps to `bug`. Explicit `-l, --labels` values still take priority.
 
 ## ai-release
 

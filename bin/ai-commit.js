@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execSync } from "child_process";
-import { readFileSync, writeFileSync, unlinkSync } from "fs";
+import { writeFileSync, unlinkSync } from "fs";
 import * as readline from "readline";
 import { tmpdir } from "os";
 import path from "path";
@@ -19,7 +19,9 @@ let ticketNumber = null;
 let developerMessage = null;
 let labels = null;
 let debug = false;
+let debugContext = false;
 let jiraContextBlock = "";
+let jiraIssueType = "";
 const excludedLabels = new Set();
 const ALLOWED_LABELS = new Set([
   "bug",
@@ -83,6 +85,23 @@ function normalizeLabels(rawLabels) {
     .join(",");
 }
 
+function normalizeIssueTypeName(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function labelFromJiraIssueType(issueType) {
+  const normalized = normalizeIssueTypeName(issueType);
+  if (!normalized) return "";
+
+  if (["bug", "dug", "defect"].includes(normalized)) return "bug";
+  if (["task", "tache", "improvement", "enhancement"].includes(normalized)) return "enhancement";
+  return "";
+}
+
 function filterExcludedLabels(rawLabels) {
   const normalized = normalizeLabels(rawLabels);
   if (!normalized) return "";
@@ -92,6 +111,18 @@ function filterExcludedLabels(rawLabels) {
     .map((label) => label.trim())
     .filter((label) => label && !excludedLabels.has(label))
     .join(",");
+}
+
+function applyJiraIssueTypeLabel(rawLabels) {
+  const jiraLabel = labelFromJiraIssueType(jiraIssueType);
+  const normalized = filterExcludedLabels(rawLabels);
+  if (!jiraLabel || excludedLabels.has(jiraLabel)) return normalized;
+
+  const labels = normalized
+    ? normalized.split(",").map((label) => label.trim()).filter(Boolean)
+    : [];
+  const withoutTypeLabels = labels.filter((label) => label !== "bug" && label !== "enhancement");
+  return [jiraLabel, ...withoutTypeLabels].slice(0, 2).join(",");
 }
 
 function buildGhLabelArgs(rawLabels) {
@@ -118,7 +149,21 @@ for (let i = 0; i < args.length; i++) {
     i++;
   } else if (
     /^-[a-z][a-z-]*$/i.test(args[i]) &&
-    !["-t", "--ticket", "-m", "--message", "-l", "--labels", "-d", "--debug", "-n", "--exclude-label", "--exclude-labels"].includes(args[i])
+    ![
+      "-t",
+      "--ticket",
+      "-m",
+      "--message",
+      "-l",
+      "--labels",
+      "-d",
+      "--debug",
+      "--debug-context",
+      "--debug-windows",
+      "-n",
+      "--exclude-label",
+      "--exclude-labels",
+    ].includes(args[i])
   ) {
     // Shorthand negative labels: -bug, -documentation, -enhancement, etc.
     const excluded = normalizeLabelName(args[i]);
@@ -127,6 +172,8 @@ for (let i = 0; i < args.length; i++) {
     }
   } else if (args[i] === "-d" || args[i] === "--debug") {
     debug = true;
+  } else if (args[i] === "--debug-context" || args[i] === "--debug-windows") {
+    debugContext = true;
   }
 }
 
@@ -215,32 +262,41 @@ function constrainBranchLength(branchName, minWords = 3, maxWords = 4) {
 
 const forcedType = detectForcedType(developerMessage);
 
-function loadGuideFile(fileName) {
-  try {
-    return readFileSync(path.join(__dirname, fileName), "utf8").trim();
-  } catch (error) {
-    console.warn(`## WARN: Could not load ${fileName}: ${error.message}`);
-    return "";
-  }
+function buildStandardsSystemMessage({ jsonOnly = false } = {}) {
+  return `
+Generate git workflow suggestions from the provided context.
+
+Priority:
+1. Developer Context (-m) is the primary intent source when present.
+2. JIRA context is primary only when Developer Context is absent.
+3. Diff is validation/scope context; do not let noisy diff details override explicit intent.
+4. Describe one highest-impact change. Ignore minor cleanup, formatting, and dependency noise.
+
+Branch standards:
+- Format with ticket: type/${ticketNumber || "TICKET"}-short-kebab-description
+- Format without ticket: type/short-kebab-description
+- Allowed types: feat, fix, refactor, chore, docs, test, perf, hotfix
+- Preserve ticket exactly as provided.
+- Description after ticket should be 3 explicit words; use 4 only if needed.
+- Use lowercase kebab-case after the slash.
+- Avoid filler/vague words: and, or, to, for, with, by, of, in, on, at, from, via, various, multiple, stuff, things, changes.
+
+Commit standards:
+- Format: ${ticketNumber ? `[${ticketNumber}] ` : ""}type(scope): imperative summary
+- Scope is optional; use lowercase kebab-case when clear.
+- Summary must be specific, one main idea, under 72 characters, no trailing period.
+
+Label standards:
+- Choose 0-2 labels from: bug, documentation, enhancement, duplicate, help wanted, good first issue, question, wontfix
+- If JIRA issue type is Task/Tache, use enhancement. If JIRA issue type is Bug, use bug.
+- Never use excluded labels: ${excludedLabels.size > 0 ? Array.from(excludedLabels).join(", ") : "(none)"}
+
+Output:
+${jsonOnly ? "- Return ONLY valid JSON. No markdown." : "- Return exactly 4 variants in the requested template. No extra commentary."}
+`.trim();
 }
 
-const branchNamingGuide = loadGuideFile("prompts/branch-naming.md");
-const commitMessageGuide = loadGuideFile("prompts/commit-message.md");
-const styleGuideSystemMessage = [branchNamingGuide, commitMessageGuide]
-  .filter(Boolean)
-  .join("\n\n");
-const localCompactSystemMessage = `
-Follow strict git naming/message style.
-- Branch type must be one of: feat, fix, refactor, chore, docs, test, perf, hotfix
-- Branch format: type/${ticketNumber || "ticket"}-short-kebab-description
-- Branch description after ticket should be 3 explicit words; 4 only if needed for clarity
-- Never end branch description with filler words: and, or, to, for, with, by, of, in, on, at, from, via
-- Commit format: ${ticketNumber ? `[${ticketNumber}] ` : ""}type(scope): short description
-- Keep labels as comma-separated values from: bug, documentation, enhancement, duplicate, help wanted, good first issue, question, wontfix
-- Never use excluded labels: ${excludedLabels.size > 0 ? Array.from(excludedLabels).join(", ") : "(none)"}
-- Output MUST follow the exact requested template.
-`.trim();
-const effectiveSystemMessage = provider === "local" ? localCompactSystemMessage : styleGuideSystemMessage;
+const effectiveSystemMessage = buildStandardsSystemMessage();
 
 // Read staged git diff
 let diff = "";
@@ -382,6 +438,7 @@ async function fetchJiraTicketContext(ticketKey, config) {
     const description = normalizeMultilineText(adfToPlainText(fields.description), 1400);
     const status = fields?.status?.name || "Unknown";
     const issueType = fields?.issuetype?.name || "Unknown";
+    jiraIssueType = issueType;
     const issueLabels = Array.isArray(fields?.labels) ? fields.labels.join(", ") : "";
     const comments = Array.isArray(fields?.comment?.comments) ? fields.comment.comments : [];
     const recentComments = comments
@@ -441,81 +498,61 @@ function buildPrBodyFromCommitLog(rawCommitLog) {
   return ["## Commits Included", ...messages.map((msg) => `- ${msg}`)].join("\n");
 }
 
-function buildPrompt() {
+function getPromptContext(diffContent = effectiveDiff) {
   const trimmedDeveloperMessage = String(developerMessage || "").trim();
-  const hasExclusiveDeveloperContext = trimmedDeveloperMessage.length > 0;
-  const promptJiraContext = hasExclusiveDeveloperContext ? "" : jiraContextBlock;
-  const promptDiff = hasExclusiveDeveloperContext ? "" : effectiveDiff;
+  const hasDeveloperContext = trimmedDeveloperMessage.length > 0;
+
+  return {
+    trimmedDeveloperMessage,
+    promptJiraContext: hasDeveloperContext ? "" : jiraContextBlock,
+    promptDiff: hasDeveloperContext ? "" : diffContent,
+    excludedContextReason: hasDeveloperContext
+      ? "Developer Context (-m) is present, so JIRA and diff are excluded from generation context."
+      : "",
+  };
+}
+
+function buildPrompt() {
+  const {
+    trimmedDeveloperMessage,
+    promptJiraContext,
+    promptDiff,
+  } = getPromptContext();
+
+  const jiraIssueTypeLine = jiraIssueType ? `JIRA Issue Type: ${jiraIssueType}\n` : "";
 
   return `
-You analyze code changes and generate 4 different variants of:
-1. A clean commit message following Conventional Commits
-2. A Gitflow-compliant branch name
-3. Appropriate GitHub labels based on the change type
+Generate 4 different variants:
+- Commit: clean Conventional Commit message
+- Branch: Gitflow-compliant branch name
+- Labels: appropriate GitHub labels
 
-Rules:
-- Commit message format: ${ticketNumber ? `[${ticketNumber}] ` : ""}type(scope): description
-- Branch name format: type/ticket-description-in-kebab-case
-  ${ticketNumber ? `* Include ticket number as provided: type/${ticketNumber}-short-description\n` : ""}  * Use kebab-case for words after ticket
-  * Description after ticket should be 3 explicit words; use 4 only if needed for clarity
-  * Never end branch description with filler words: and, or, to, for, with, by, of, in, on, at, from, via
-- Types: feat, fix, refactor, chore, docs, test, perf, hotfix
-- Labels: Choose 1-2 from: bug, documentation, enhancement, duplicate, help wanted, good first issue, question, wontfix
-  * bug: Something isn't working or fixes an issue
-  * documentation: Improvements or additions to documentation
-  * enhancement: New feature or request
-  * Use labels that best match the actual code changes
-${excludedLabels.size > 0 ? `  * NEVER use excluded labels: ${Array.from(excludedLabels).join(", ")}` : ""}
-- Be concise and descriptive
-- No emojis
-- PRIORITY ORDER:
-${hasExclusiveDeveloperContext ? `  1) Developer Context is the ONLY intent source for this run.
-  2) Ignore JIRA ticket details except for preserving the ticket key in the output format.
-  3) Ignore code diff details for naming and wording.
-  4) If the developer context is short, expand only with neutral wording; do not invent unrelated scope.` : `  1) JIRA Ticket Context (requirements + what was done) is PRIMARY when provided.
-  2) Developer Context is SECONDARY intent and wording source.
-  3) Code diff is THIRD for validation and scope refinement.
-  4) If sources conflict, prefer JIRA context, then developer context, then diff.`}
-${trimmedDeveloperMessage ? `- Developer Context: "${trimmedDeveloperMessage}"
-  * Reuse concrete terms from this context in BOTH commit description and branch description.
-  * Ensure at least 2 key nouns/phrases from this context appear in each generated variant.
-  * CRITICAL: If the context contains keywords like "fix", "bug", "bugfix" -> use ONLY "fix" type for ALL 4 variants
-  * If it contains "feature", "add", "new" -> use ONLY "feat" type for ALL 4 variants
-  * If it contains "refactor", "restructure" -> use ONLY "refactor" type for ALL 4 variants
-  * If it contains "hotfix", "urgent", "critical" -> use ONLY "hotfix" type for ALL 4 variants
-  * If it contains "docs", "documentation" -> use ONLY "docs" type for ALL 4 variants
-  * If it contains "test", "testing" -> use ONLY "test" type for ALL 4 variants
-  * If it contains "perf", "performance", "optimize" -> use ONLY "perf" type for ALL 4 variants
-  * If it contains "chore", "maintenance", "dependency", "bump", "upgrade" -> use ONLY "chore" type for ALL 4 variants
-  * Otherwise, base the type on the actual code changes\n` : ""}
-- Generate 4 DIFFERENT variants with varying levels of detail and focus (but same type when intent is clear)
-- Output in this EXACT format:
-  Variant 1:
-  Commit: [commit message]
-  Branch: [branch name]
-  Labels: [label1,label2]
-  
-  Variant 2:
-  Commit: [commit message]
-  Branch: [branch name]
-  Labels: [label1,label2]
-  
-  Variant 3:
-  Commit: [commit message]
-  Branch: [branch name]
-  Labels: [label1,label2]
-  
-  Variant 4:
-  Commit: [commit message]
-  Branch: [branch name]
-  Labels: [label1,label2]
-
-${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${promptJiraContext ? `JIRA Ticket Context (primary intent):\n${promptJiraContext}\n\n` : ""}${trimmedDeveloperMessage ? `Developer Context: ${trimmedDeveloperMessage}\n\n` : ""}${promptDiff ? `Code Changes:
+${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${jiraIssueTypeLine}${trimmedDeveloperMessage ? `Developer Context (-m, highest priority):\n${trimmedDeveloperMessage}\n\nUse concrete wording from Developer Context in every variant. If Developer Context implies a type, keep that type for all variants.\n\n` : ""}${promptJiraContext ? `JIRA Ticket Context:\n${promptJiraContext}\n\n` : ""}${promptDiff ? `Code Changes:
 ---
 ${promptDiff}
 ---
 
-Generate 4 variants using JIRA context first, then developer context, then diff validation:` : `Generate 4 variants using ONLY the developer context above:`}
+` : ""}
+Output exactly:
+Variant 1:
+Commit: [commit message]
+Branch: [branch name]
+Labels: [label1,label2]
+
+Variant 2:
+Commit: [commit message]
+Branch: [branch name]
+Labels: [label1,label2]
+
+Variant 3:
+Commit: [commit message]
+Branch: [branch name]
+Labels: [label1,label2]
+
+Variant 4:
+Commit: [commit message]
+Branch: [branch name]
+Labels: [label1,label2]
 `;
 }
 
@@ -531,7 +568,7 @@ function parseVariants(outputText) {
 
       let processedLabels = "";
       if (labelsMatch) {
-        processedLabels = filterExcludedLabels(labelsMatch[1]);
+        processedLabels = applyJiraIssueTypeLabel(labelsMatch[1]);
       }
 
       if (commitMatch && branchMatch) {
@@ -561,7 +598,7 @@ function parseVariants(outputText) {
     relaxedResults.push({
       commit: match[1].trim(),
       branch: constrainBranchLength(normalizeBranchType(match[2], forcedType)),
-      labels: filterExcludedLabels(processedLabels)
+      labels: applyJiraIssueTypeLabel(processedLabels)
     });
   }
 
@@ -593,7 +630,7 @@ function parseJsonVariants(outputText) {
       }))
       .map((item) => ({
         ...item,
-        labels: filterExcludedLabels(item.labels),
+        labels: applyJiraIssueTypeLabel(item.labels),
       }))
       .filter((item) => item.commit && item.branch)
       .slice(0, 4);
@@ -603,37 +640,93 @@ function parseJsonVariants(outputText) {
 }
 
 function buildRecoveryPrompt(diffContent) {
+  const {
+    trimmedDeveloperMessage,
+    promptJiraContext,
+    promptDiff,
+  } = getPromptContext(diffContent);
+
+  const jiraIssueTypeLine = jiraIssueType ? `JIRA Issue Type: ${jiraIssueType}\n` : "";
+
   return `
 Return ONLY valid JSON. No markdown.
 Generate exactly 4 objects in an array with keys: commit, branch, labels.
 
-Rules:
-- commit format: ${ticketNumber ? `[${ticketNumber}] ` : ""}type(scope): description
-- branch format: type/ticket-kebab-description
-- types allowed: feat, fix, refactor, chore, docs, test, perf, hotfix
-- labels: comma-separated from bug, documentation, enhancement, duplicate, help wanted, good first issue, question, wontfix
-${excludedLabels.size > 0 ? `- NEVER use excluded labels: ${Array.from(excludedLabels).join(", ")}` : ""}
-${jiraContextBlock ? `- JIRA Ticket Context is PRIMARY intent; prioritize requirements and recent done-work notes.` : ""}
-${developerMessage ? `- Developer Context is SECONDARY intent; reuse its key wording when compatible with JIRA context.` : ""}
-
 JSON schema:
 [{"commit":"...","branch":"...","labels":"label1,label2"}]
 
-${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${jiraContextBlock ? `JIRA Ticket Context (primary intent):\n${jiraContextBlock}\n\n` : ""}${developerMessage ? `Developer Context: ${developerMessage}\n\n` : ""}Code Changes:
+${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${jiraIssueTypeLine}${trimmedDeveloperMessage ? `Developer Context (-m, highest priority):\n${trimmedDeveloperMessage}\n\nUse concrete wording from Developer Context in every object.\n\n` : ""}${promptJiraContext ? `JIRA Ticket Context:\n${promptJiraContext}\n\n` : ""}${promptDiff ? `Code Changes:
 ---
-${diffContent}
+${promptDiff}
 ---
+` : ""}
 `;
+}
+
+function estimateTokenCount(text) {
+  if (!text) return 0;
+  return Math.ceil(String(text).length / 4);
+}
+
+function printContextWindow(label, value) {
+  const text = String(value || "");
+  console.log(`\n## DEBUG: --- Context Window: ${label} ---`);
+  console.log(`## DEBUG: chars=${text.length}, approx_tokens=${estimateTokenCount(text)}`);
+  if (text.trim()) {
+    console.log(text);
+  } else {
+    console.log("## DEBUG: (empty)");
+  }
+  console.log(`## DEBUG: --- End Context Window: ${label} ---`);
+}
+
+function printContextWindows({ userPrompt, recoveryPrompt = "" }) {
+  const {
+    trimmedDeveloperMessage,
+    promptJiraContext,
+    promptDiff,
+    excludedContextReason,
+  } = getPromptContext();
+  console.log("\n## DEBUG: === Context Windows ===");
+  console.log(`## DEBUG: ticket=${ticketNumber || "(none)"}`);
+  console.log(`## DEBUG: jiraIssueType=${jiraIssueType || "(none)"}`);
+  console.log(`## DEBUG: jiraIssueTypeLabel=${labelFromJiraIssueType(jiraIssueType) || "(none)"}`);
+  console.log(`## DEBUG: provider=${provider}`);
+  console.log(`## DEBUG: model=${modelName}`);
+  if (excludedContextReason) {
+    console.log(`## DEBUG: ${excludedContextReason}`);
+  }
+  printContextWindow("effective system prompt", effectiveSystemMessage);
+  printContextWindow("developer context", trimmedDeveloperMessage);
+  if (promptJiraContext) {
+    printContextWindow("JIRA ticket context", promptJiraContext);
+  } else if (jiraContextBlock) {
+    console.log("\n## DEBUG: JIRA ticket context excluded from prompt");
+  }
+  if (promptDiff) {
+    printContextWindow("effective staged diff", promptDiff);
+  } else if (diff.trim()) {
+    console.log("\n## DEBUG: staged diff excluded from prompt");
+  }
+  printContextWindow("primary user prompt", userPrompt);
+  if (recoveryPrompt) {
+    printContextWindow("recovery user prompt", recoveryPrompt);
+  }
+  console.log("\n## DEBUG: === End Context Windows ===\n");
 }
 
 async function generateVariants() {
   const genStartTime = Date.now();
+  const primaryPrompt = buildPrompt();
+  if (debugContext) {
+    printContextWindows({ userPrompt: primaryPrompt });
+  }
   const result = await generateText({
     client,
     provider,
     modelName,
     systemPrompt: effectiveSystemMessage,
-    userPrompt: buildPrompt(),
+    userPrompt: primaryPrompt,
     temperature: 0.2,
     debug,
     debugLabel: "variants-primary",
@@ -644,12 +737,16 @@ async function generateVariants() {
 
   let results = parseVariants(result.text);
   if (results.length < 4) {
+    const recoveryPrompt = buildRecoveryPrompt(effectiveDiff);
+    if (debugContext) {
+      printContextWindows({ userPrompt: primaryPrompt, recoveryPrompt });
+    }
     const recovery = await generateText({
       client,
       provider,
       modelName,
-      systemPrompt: provider === "local" ? localCompactSystemMessage : styleGuideSystemMessage,
-      userPrompt: buildRecoveryPrompt(effectiveDiff),
+      systemPrompt: buildStandardsSystemMessage({ jsonOnly: true }),
+      userPrompt: recoveryPrompt,
       temperature: 0.1,
       debug,
       debugLabel: "variants-recovery",
@@ -745,14 +842,23 @@ async function run() {
   try {
     console.log("\n## Workflow: Rename branch + Commit + Create PR\n");
 
-    if (ticketNumber && !developerMessage?.trim()) {
+    if (ticketNumber) {
       console.log(`## INFO: Loading JIRA context for ticket ${ticketNumber}...`);
       jiraContextBlock = await fetchJiraTicketContext(ticketNumber, config);
       if (jiraContextBlock) {
-        console.log("## OK: JIRA ticket context loaded and will be used for branch/commit generation.");
+        const jiraLabel = labelFromJiraIssueType(jiraIssueType);
+        if (developerMessage?.trim()) {
+          console.log("## OK: JIRA ticket context loaded for issue type and labels; -m remains the generation priority.");
+        } else {
+          console.log("## OK: JIRA ticket context loaded and will be used for branch/commit generation.");
+        }
+        if (jiraLabel) {
+          console.log(`## INFO: JIRA issue type '${jiraIssueType}' maps to GitHub label '${jiraLabel}'.`);
+        }
       }
-    } else if (ticketNumber && developerMessage?.trim()) {
-      console.log("## INFO: Developer context provided with -m; skipping JIRA context and diff context for generation.");
+      if (developerMessage?.trim()) {
+        console.log("## INFO: Developer context provided with -m; excluding full JIRA context and diff context from generation.");
+      }
     }
     
     let selectedBranch = null;
@@ -800,7 +906,7 @@ async function run() {
         console.log("\n## INFO: Generating new variants...\n");
       } else {
         selectedCommit = selection.commit;
-        selectedLabels = selection.labels;
+        selectedLabels = applyJiraIssueTypeLabel(selection.labels);
       }
     }
     
@@ -848,7 +954,7 @@ async function run() {
         let prCommand = `gh pr create --base ${baseBranchName} --head ${selectedBranch} --title "${prTitle.replace(/"/g, '\\"')}" --body-file "${tempBodyFile}" --assignee brahimbousnguar`;
         
         // Use AI-selected labels or command-line provided labels
-        const finalLabels = filterExcludedLabels(labels || selectedLabels);
+        const finalLabels = labels ? filterExcludedLabels(labels) : applyJiraIssueTypeLabel(selectedLabels);
         if (finalLabels) {
           prCommand += buildGhLabelArgs(finalLabels);
         }
