@@ -4,6 +4,7 @@ This repository contains two Git Bash CLI tools:
 
 ```bash
 ai-commit -t TICKET-123 -m "context"
+ai-commit --yes -t TICKET-123 -m "context"
 ai-release
 ```
 
@@ -19,10 +20,23 @@ alias ai-release='node /d/Projects/RocheBB/Tools/ai-local-git-flow/bin/ai-releas
 ```bash
 npm install
 npm run ai-commit -- -t TICKET-123 -m "context"
+npm run ai-commit -- --yes -t TICKET-123 -m "context"
 npm run ai-release --
 ```
 
 No frontend, Docker app, TypeScript build, or test suite is part of this trimmed repo.
+
+## Commit Workflow for Claude
+
+When asked to commit, create a feature branch, push, or open a PR:
+
+1. Run `git status --short`.
+2. Review the relevant diff with `git diff` and `git diff --staged`.
+3. Stage only the files that belong to the requested change with `git add <files>`.
+4. Run `npm run ai-commit -- --yes`, adding `-t TICKET-123` and `-m "short context"` when available.
+5. Let `ai-commit` generate the branch name, commit message, labels, push, and PR.
+
+Do not stage unrelated user changes. Do not hand-write the branch name, commit message, labels, push, or PR when the user wants this local AI Git workflow.
 
 ## Architecture
 

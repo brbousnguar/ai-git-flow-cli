@@ -27,6 +27,12 @@ Run the commit workflow from the repo:
 npm run ai-commit -- -t SFSC-1573 -m "implement SSO authentication"
 ```
 
+Run the non-interactive commit workflow for agents:
+
+```bash
+npm run ai-commit -- --yes -t SFSC-1573 -m "implement SSO authentication"
+```
+
 Run the release workflow:
 
 ```bash
@@ -42,6 +48,10 @@ Use modern JavaScript ES modules; `package.json` sets `"type": "module"`. Keep e
 ## Testing Guidelines
 
 No automated test suite is currently configured. Validate changes by running the relevant CLI with safe inputs and, where useful, `--debug` to inspect prompts and model requests. For workflow changes, test both direct npm execution and the Git Bash alias path. If adding tests later, prefer `test/` and wire it through `npm test`.
+
+## Agent Commit Workflow
+
+When Codex or another AI agent is asked to commit, create a feature branch, push, or open a PR, first inspect `git status --short`, review `git diff` and `git diff --staged`, stage only the intended files, then run `npm run ai-commit -- --yes` with `-t` and `-m` when available. Do not stage unrelated user changes or hand-write branch names, commit messages, labels, pushes, or PRs when this local workflow should own them.
 
 ## Commit & Pull Request Guidelines
 

@@ -20,6 +20,7 @@ let developerMessage = null;
 let labels = null;
 let debug = false;
 let debugContext = false;
+let yes = false;
 let jiraContextBlock = "";
 let jiraIssueType = "";
 const excludedLabels = new Set();
@@ -33,6 +34,7 @@ const ALLOWED_LABELS = new Set([
   "question",
   "wontfix",
 ]);
+const ALLOWED_BRANCH_TYPES = new Set(["feat", "fix", "refactor", "chore", "docs", "test", "perf", "hotfix"]);
 
 function printSignatureBanner() {
   const banner = [
@@ -160,6 +162,9 @@ for (let i = 0; i < args.length; i++) {
       "--debug",
       "--debug-context",
       "--debug-windows",
+      "-y",
+      "--yes",
+      "--auto",
       "-n",
       "--exclude-label",
       "--exclude-labels",
@@ -174,6 +179,8 @@ for (let i = 0; i < args.length; i++) {
     debug = true;
   } else if (args[i] === "--debug-context" || args[i] === "--debug-windows") {
     debugContext = true;
+  } else if (args[i] === "-y" || args[i] === "--yes" || args[i] === "--auto") {
+    yes = true;
   }
 }
 
@@ -219,7 +226,8 @@ function constrainBranchLength(branchName, minWords = 3, maxWords = 4) {
   if (!branchName || !branchName.includes("/")) return branchName;
 
   const [typeRaw, rawRest] = branchName.split("/", 2);
-  const type = String(typeRaw || "").toLowerCase();
+  const sanitizedType = String(typeRaw || "").toLowerCase().replace(/[^a-z]/g, "");
+  const type = ALLOWED_BRANCH_TYPES.has(sanitizedType) ? sanitizedType : (forcedType || "chore");
   if (!rawRest) return branchName;
 
   const rest = rawRest.trim();
@@ -936,6 +944,14 @@ async function selectCommitMessage(variants, generationTime) {
       console.log(`   Labels: ${v.labels}`);
     }
   });
+
+  if (yes) {
+    console.log("\n## INFO: --yes enabled; selecting commit message 1");
+    return {
+      commit: variants[0].commit,
+      labels: variants[0].labels,
+    };
+  }
   
   while (true) {
     const answer = await askQuestion("\nSelect commit message (Enter=1, 2-4, or 'n' for new): ");
@@ -962,6 +978,11 @@ async function selectBranchName(variants, generationTime) {
   variants.forEach((v, i) => {
     console.log(`${i + 1}. ${v.branch}`);
   });
+
+  if (yes) {
+    console.log("\n## INFO: --yes enabled; selecting branch name 1");
+    return variants[0].branch;
+  }
   
   while (true) {
     const answer = await askQuestion("\nSelect branch name (Enter=1, 2-4, or 'n' for new): ");
@@ -985,6 +1006,9 @@ async function run() {
   
   printSignatureBanner();
   console.log(`## INFO: Using model: ${modelName} (${provider})`);
+  if (yes) {
+    console.log("## INFO: Non-interactive mode enabled; defaulting selections to option 1");
+  }
   if (excludedLabels.size > 0) {
     console.log(`## INFO: Excluding labels: ${Array.from(excludedLabels).join(", ")}`);
   }

@@ -91,6 +91,7 @@ ai-commit -m "new feature, add customer request endpoint"
 ai-commit -t SFSC-1573 -m "new feature, implement SSO authentication"
 ai-commit -l "bug,enhancement" -m "hotfix, critical security patch"
 ai-commit -m "update RAML customer request type" -n bug
+ai-commit --yes -t SFSC-1573 -m "implement SSO authentication"
 ```
 
 Options:
@@ -103,8 +104,17 @@ Options:
 - `-bug`, `-documentation`, `-enhancement`: shorthand exclusion flags
 - `-d, --debug`: print LLM request details
 - `--debug-context`: print context windows used for generation
+- `-y, --yes, --auto`: non-interactive mode; choose variant 1 for the branch and commit message
 
 When `-m, --message` is provided, that developer context is treated as the highest-priority intent. JIRA and diff context are skipped for generation so naming and commit wording stay aligned with the supplied message.
+
+For AI agents such as Codex or Claude, prefer staging the intended files first and then running:
+
+```bash
+npm run ai-commit -- --yes -t SFSC-1573 -m "short implementation context"
+```
+
+The `--yes` flag keeps the workflow non-interactive while still using this CLI for branch naming, commit messages, labels, push, and PR creation.
 
 Branch and commit generation use split context windows:
 
