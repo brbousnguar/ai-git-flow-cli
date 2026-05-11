@@ -5,7 +5,7 @@ import { writeFileSync, unlinkSync } from "fs";
 import * as readline from "readline";
 import { tmpdir } from "os";
 import path from "path";
-import { loadConfigAndEnv, initOpenAIClient, printTokenUsage, generateText, setupCliConsole } from "../src/ai-common.js";
+import { loadConfigAndEnv, initOpenAIClient, printTokenUsage, generateText, setupCliConsole, formatLocalEndpointFallback, isLocalConnectionError } from "../src/ai-common.js";
 
 // Load config and env
 const { config, __dirname } = loadConfigAndEnv(import.meta.url);
@@ -468,9 +468,10 @@ async function run() {
     }
     
   } catch (error) {
-    if (error.code === "ECONNREFUSED") {
-      console.error("❌ Cannot connect to Ollama. Make sure it's running: ollama serve");
-      console.error(`   Then pull the model: ollama pull ${modelName}`);
+    if (provider === "local" && isLocalConnectionError(error)) {
+      console.error("❌ Cannot connect to any configured Ollama endpoint.");
+      console.error(`   Fallback order: ${formatLocalEndpointFallback(config)}`);
+      console.error("   Make sure the Mac Mini Ollama server is reachable and local Ollama is running if you want fallback.");
     } else {
       console.error("❌ Error:", error.message);
     }

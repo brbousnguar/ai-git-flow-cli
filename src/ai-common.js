@@ -68,10 +68,45 @@ export function loadConfigAndEnv(metaUrl) {
   return { config, __dirname };
 }
 
+function parseProvider(rawProvider = "local") {
+  const text = String(rawProvider || "local");
+  const separatorIndex = text.indexOf(":");
+  if (separatorIndex === -1) {
+    return { provider: text, modelOverride: null };
+  }
+  return {
+    provider: text.slice(0, separatorIndex),
+    modelOverride: text.slice(separatorIndex + 1) || null,
+  };
+}
+
+function buildLocalEndpointConfigs(localConfig = {}, effectiveModelOverride = null) {
+  const configuredEndpoints = Array.isArray(localConfig.endpoints) ? localConfig.endpoints : [];
+  const endpoints = configuredEndpoints.length > 0
+    ? configuredEndpoints
+    : [
+        {
+          name: "local",
+          baseURL: localConfig.baseURL,
+          default: localConfig.default,
+          models: localConfig.models,
+        },
+      ];
+
+  return endpoints
+    .map((endpoint, index) => ({
+      name: endpoint.name || `local-${index + 1}`,
+      baseURL: endpoint.baseURL || localConfig.baseURL,
+      modelName: effectiveModelOverride || endpoint.default || localConfig.default,
+      models: endpoint.models || localConfig.models || {},
+    }))
+    .filter((endpoint) => endpoint.baseURL && endpoint.modelName);
+}
+
 export function initOpenAIClient(config, __dirname, modelOverrideArg) {
   let client;
   let modelName;
-  const [provider, modelOverride] = config.provider.split(":");
+  const { provider, modelOverride } = parseProvider(config.provider);
   const effectiveModelOverride = modelOverrideArg || modelOverride;
 
   if (provider === "cloud") {
@@ -85,14 +120,45 @@ export function initOpenAIClient(config, __dirname, modelOverrideArg) {
     });
     modelName = effectiveModelOverride || config.cloud.model;
   } else {
-    // Local Ollama
+    const localEndpoints = buildLocalEndpointConfigs(config.local, effectiveModelOverride);
+    if (localEndpoints.length === 0) {
+      console.error("## ERROR: No local Ollama endpoints configured in config.json");
+      process.exit(1);
+    }
+
+    const clients = localEndpoints.map((endpoint) => ({
+      ...endpoint,
+      client: new OpenAI({
+        baseURL: endpoint.baseURL,
+        apiKey: "ollama", // required but unused for Ollama
+      }),
+    }));
+
     client = new OpenAI({
-      baseURL: config.local.baseURL,
+      baseURL: clients[0].baseURL,
       apiKey: "ollama", // required but unused for Ollama
     });
-    modelName = effectiveModelOverride || config.local.default;
+    client.__localFallbacks = clients;
+    modelName = clients[0].modelName;
   }
   return { client, modelName, provider };
+}
+
+export function formatLocalEndpointFallback(config) {
+  const endpoints = buildLocalEndpointConfigs(config?.local);
+  if (endpoints.length === 0) return "local Ollama";
+  return endpoints
+    .map((endpoint) => `${endpoint.name} (${endpoint.baseURL}, model=${endpoint.modelName})`)
+    .join(" -> ");
+}
+
+export function isLocalConnectionError(error) {
+  const codes = new Set(["ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH"]);
+  const code = error?.code || error?.cause?.code;
+  if (codes.has(code)) return true;
+
+  const message = String(error?.message || error?.cause?.message || "").toLowerCase();
+  return message.includes("connection error") || message.includes("fetch failed");
 }
 
 function extractTextFromResponsesOutput(response) {
@@ -200,19 +266,42 @@ export async function generateText({
   if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
   messages.push({ role: "user", content: userPrompt });
 
-  const request = {
-    model: modelName,
-    messages,
-  };
-  if (Number.isFinite(temperature)) request.temperature = temperature;
-  if (Number.isFinite(maxOutputTokens)) request.max_tokens = maxOutputTokens;
+  const localFallbacks = Array.isArray(client.__localFallbacks)
+    ? client.__localFallbacks
+    : [{ name: "local", client, modelName }];
+  let lastError;
 
-  const response = await client.chat.completions.create(request);
-  return {
-    text: response?.choices?.[0]?.message?.content?.trim() || "",
-    usage: response?.usage || null,
-    raw: response,
-  };
+  for (const endpoint of localFallbacks) {
+    const request = {
+      model: endpoint.modelName || modelName,
+      messages,
+    };
+    if (Number.isFinite(temperature)) request.temperature = temperature;
+    if (Number.isFinite(maxOutputTokens)) request.max_tokens = maxOutputTokens;
+
+    try {
+      if (debug && localFallbacks.length > 1) {
+        console.log(`## DEBUG: local endpoint: ${endpoint.name} (${endpoint.baseURL || "configured client"})`);
+        console.log(`## DEBUG: local endpoint model: ${request.model}`);
+      }
+
+      const response = await endpoint.client.chat.completions.create(request);
+      return {
+        text: response?.choices?.[0]?.message?.content?.trim() || "",
+        usage: response?.usage || null,
+        raw: response,
+      };
+    } catch (error) {
+      lastError = error;
+      const hasNextEndpoint = endpoint !== localFallbacks[localFallbacks.length - 1];
+      if (!hasNextEndpoint) break;
+
+      const reason = error?.message ? ` ${error.message}` : "";
+      console.warn(`## WARN: Local Ollama endpoint '${endpoint.name}' failed; trying next endpoint.${reason}`);
+    }
+  }
+
+  throw lastError;
 }
 
 function formatUsd(value, decimals = 6) {

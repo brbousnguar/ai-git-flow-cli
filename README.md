@@ -63,10 +63,28 @@ or:
   "provider": "local",
   "local": {
     "default": "qwen2.5-coder:14b",
-    "baseURL": "http://localhost:11434/v1"
+    "baseURL": "http://localhost:11434/v1",
+    "endpoints": [
+      {
+        "name": "mac-mini-m4-pro",
+        "baseURL": "http://192.168.1.95:11434/v1",
+        "default": "qwen3-coder:30b-64k",
+        "models": {
+          "devstral:24b-64k": "Mac Mini model for complex implementation and reasoning",
+          "qwen3-coder:30b-64k": "Mac Mini default for coding, diffs, and workflow generation"
+        }
+      },
+      {
+        "name": "local",
+        "baseURL": "http://localhost:11434/v1",
+        "default": "qwen2.5-coder:14b"
+      }
+    ]
   }
 }
 ```
+
+When `local.endpoints` is configured, the CLI tries them in order. The Mac Mini Ollama server is checked first, then the local machine is used as fallback. Each endpoint can keep its own default model list, so Mac Mini models do not need to match local models.
 
 ## ai-commit
 

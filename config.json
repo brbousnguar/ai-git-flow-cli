@@ -11,7 +11,32 @@
       "qwen2.5-coder:14b": "Higher quality code help; slower on CPU",
       "nomic-embed-text": "Embeddings for search/RAG over repo/logs (optional)"
     },
-    "baseURL": "http://localhost:11434/v1"
+    "baseURL": "http://localhost:11434/v1",
+    "endpoints": [
+      {
+        "name": "mac-mini-m4-pro",
+        "baseURL": "http://192.168.1.95:11434/v1",
+        "default": "qwen3-coder:30b-64k",
+        "models": {
+          "devstral:24b-64k": "Mac Mini model for complex implementation and reasoning",
+          "qwen3-coder:30b-64k": "Mac Mini default for coding, diffs, and workflow generation"
+        }
+      },
+      {
+        "name": "local",
+        "baseURL": "http://localhost:11434/v1",
+        "default": "qwen2.5-coder:14b",
+        "models": {
+          "qwen2.5-coder:7b": "Fast default for code + diffs + scripts",
+          "mistral-nemo:12b": "Slower, better reasoning / complex changes",
+          "llama3.1:8b": "Great for release notes, summaries, human-friendly text",
+          "qwen2.5:7b-instruct": "Good general assistant; clean changelogs + explanations",
+          "phi3.5:latest": "Ultra-fast commit messages / short tasks",
+          "qwen2.5-coder:14b": "Higher quality code help; slower on CPU",
+          "nomic-embed-text": "Embeddings for search/RAG over repo/logs (optional)"
+        }
+      }
+    ]
   },
   "cloud": {
     "model": "gpt-4o-mini",
