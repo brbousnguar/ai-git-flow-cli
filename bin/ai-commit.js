@@ -10,7 +10,7 @@ import { loadConfigAndEnv, initOpenAIClient, printTokenUsage, generateText, setu
 // Load config and env
 const { config, __dirname } = loadConfigAndEnv(import.meta.url);
 // Configure client based on provider
-const { client, modelName, provider } = initOpenAIClient(config, __dirname);
+const { client, modelName, provider, providerLabel } = initOpenAIClient(config, __dirname);
 setupCliConsole();
 
 // Parse command-line arguments for ticket number
@@ -1005,7 +1005,7 @@ async function run() {
   const startTime = Date.now();
   
   printSignatureBanner();
-  console.log(`## INFO: Using model: ${modelName} (${provider})`);
+  console.log(`## INFO: Using model: ${modelName} (${providerLabel})`);
   if (yes) {
     console.log("## INFO: Non-interactive mode enabled; defaulting selections to option 1");
   }

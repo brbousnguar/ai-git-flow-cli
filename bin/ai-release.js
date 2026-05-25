@@ -10,7 +10,7 @@ import { loadConfigAndEnv, initOpenAIClient, printTokenUsage, generateText, setu
 // Load config and env
 const { config, __dirname } = loadConfigAndEnv(import.meta.url);
 // Configure client based on provider
-const { client, modelName, provider } = initOpenAIClient(config, __dirname);
+const { client, modelName, provider, providerLabel } = initOpenAIClient(config, __dirname);
 setupCliConsole();
 
 // Parse command-line arguments for version/tag
@@ -323,7 +323,7 @@ async function askQuestion(query) {
 async function run() {
   const startTime = Date.now();
   
-  console.log(`🤖 Using model: ${modelName} (${provider})`);
+  console.log(`🤖 Using model: ${modelName} (${providerLabel})`);
   
   try {
     ticketCommitContext = buildTicketCommitContext(commitLog);

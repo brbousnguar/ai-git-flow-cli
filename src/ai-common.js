@@ -106,6 +106,7 @@ function buildLocalEndpointConfigs(localConfig = {}, effectiveModelOverride = nu
 export function initOpenAIClient(config, __dirname, modelOverrideArg) {
   let client;
   let modelName;
+  let providerLabel;
   const { provider, modelOverride } = parseProvider(config.provider);
   const effectiveModelOverride = modelOverrideArg || modelOverride;
 
@@ -119,6 +120,7 @@ export function initOpenAIClient(config, __dirname, modelOverrideArg) {
       apiKey: process.env.OPENAI_API_KEY,
     });
     modelName = effectiveModelOverride || config.cloud.model;
+    providerLabel = provider;
   } else {
     const localEndpoints = buildLocalEndpointConfigs(config.local, effectiveModelOverride);
     if (localEndpoints.length === 0) {
@@ -140,8 +142,9 @@ export function initOpenAIClient(config, __dirname, modelOverrideArg) {
     });
     client.__localFallbacks = clients;
     modelName = clients[0].modelName;
+    providerLabel = clients[0].name || provider;
   }
-  return { client, modelName, provider };
+  return { client, modelName, provider, providerLabel };
 }
 
 export function formatLocalEndpointFallback(config) {
