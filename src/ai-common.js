@@ -140,6 +140,12 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function toOllamaApiBaseURL(rawBaseURL) {
+  const baseURL = normalizeBaseURL(rawBaseURL);
+  if (!baseURL) return "";
+  return baseURL.replace(/\/v1$/i, "");
+}
+
 function selectLocalEndpoints(localConfig = {}, mode = "local") {
   const configuredEndpoints = Array.isArray(localConfig.endpoints) ? localConfig.endpoints : [];
   if (mode === "local") return configuredEndpoints;
@@ -364,6 +370,9 @@ export async function generateText({
   maxOutputTokens,
   debug = false,
   debugLabel = "",
+  progress = false,
+  stream = false,
+  think = false,
 }) {
   if (debug) {
     const title = debugLabel ? ` [${debugLabel}]` : "";
@@ -386,6 +395,9 @@ export async function generateText({
   }
 
   if (provider === "cloud") {
+    if (stream) {
+      console.warn("## WARN: --stream is currently supported for local Ollama requests only; using normal cloud request.");
+    }
     const input = [];
     if (systemPrompt) {
       input.push({
@@ -445,6 +457,8 @@ export async function generateText({
     if (Number.isFinite(maxOutputTokens)) request.max_tokens = maxOutputTokens;
 
     for (let attempt = 1; attempt <= 2; attempt++) {
+      let progressTimer = null;
+      const startTime = Date.now();
       try {
         if (debug && (localFallbacks.length > 1 || attempt > 1)) {
           console.log(`## DEBUG: local endpoint: ${endpoint.name} (${endpoint.baseURL || "configured client"})`);
@@ -452,13 +466,131 @@ export async function generateText({
           console.log(`## DEBUG: local endpoint attempt: ${attempt}`);
         }
 
+        if (progress) {
+          progressTimer = setInterval(() => {
+            const elapsedSeconds = Math.round((Date.now() - startTime) / 1000);
+            console.log(`## INFO: Still waiting for ${endpoint.name} (${request.model}) after ${elapsedSeconds}s...`);
+          }, 15000);
+        }
+
+        const ollamaApiBaseURL = toOllamaApiBaseURL(endpoint.baseURL);
+        if (ollamaApiBaseURL) {
+          const body = {
+            model: request.model,
+            messages,
+            stream,
+            think,
+          };
+          const options = {};
+          if (Number.isFinite(temperature)) options.temperature = temperature;
+          if (Number.isFinite(maxOutputTokens)) options.num_predict = maxOutputTokens;
+          if (Object.keys(options).length > 0) body.options = options;
+
+          if (stream) {
+            process.stdout.write(`\n## STREAM: ${endpoint.name} (${request.model})\n`);
+          }
+
+          const response = await fetch(`${ollamaApiBaseURL}/api/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+
+          if (!response.ok) {
+            const errorBody = await response.text();
+            const error = new Error(`Ollama chat failed (${response.status}): ${errorBody.slice(0, 300)}`);
+            error.status = response.status;
+            throw error;
+          }
+
+          if (stream) {
+            const decoder = new TextDecoder();
+            const chunks = [];
+            let buffer = "";
+
+            for await (const rawChunk of response.body) {
+              buffer += decoder.decode(rawChunk, { stream: true });
+              const lines = buffer.split(/\r?\n/);
+              buffer = lines.pop() || "";
+
+              for (const line of lines) {
+                if (!line.trim()) continue;
+                const parsed = JSON.parse(line);
+                const content = parsed?.message?.content || "";
+                if (content) {
+                  chunks.push(content);
+                  process.stdout.write(content);
+                }
+              }
+            }
+
+            if (buffer.trim()) {
+              const parsed = JSON.parse(buffer);
+              const content = parsed?.message?.content || "";
+              if (content) {
+                chunks.push(content);
+                process.stdout.write(content);
+              }
+            }
+
+            process.stdout.write("\n## STREAM: end\n");
+            if (progressTimer) clearInterval(progressTimer);
+            return {
+              text: chunks.join("").trim(),
+              usage: null,
+              raw: null,
+            };
+          }
+
+          const responseBody = await response.json();
+          if (progressTimer) clearInterval(progressTimer);
+          return {
+            text: responseBody?.message?.content?.trim() || "",
+            usage: responseBody
+              ? {
+                  prompt_tokens: responseBody.prompt_eval_count || 0,
+                  completion_tokens: responseBody.eval_count || 0,
+                  total_tokens: (responseBody.prompt_eval_count || 0) + (responseBody.eval_count || 0),
+                }
+              : null,
+            raw: responseBody,
+          };
+        }
+
+        if (stream) {
+          process.stdout.write(`\n## STREAM: ${endpoint.name} (${request.model})\n`);
+          const chunks = [];
+          const response = await endpoint.client.chat.completions.create({
+            ...request,
+            stream: true,
+          });
+
+          for await (const chunk of response) {
+            const content = chunk?.choices?.[0]?.delta?.content || "";
+            if (content) {
+              chunks.push(content);
+              process.stdout.write(content);
+            }
+          }
+
+          process.stdout.write("\n## STREAM: end\n");
+          if (progressTimer) clearInterval(progressTimer);
+          return {
+            text: chunks.join("").trim(),
+            usage: null,
+            raw: null,
+          };
+        }
+
         const response = await endpoint.client.chat.completions.create(request);
+        if (progressTimer) clearInterval(progressTimer);
         return {
           text: response?.choices?.[0]?.message?.content?.trim() || "",
           usage: response?.usage || null,
           raw: response,
         };
       } catch (error) {
+        if (progressTimer) clearInterval(progressTimer);
         lastError = error;
         error.ollamaEndpointName = endpoint.name;
         error.ollamaEndpointBaseURL = endpoint.baseURL;

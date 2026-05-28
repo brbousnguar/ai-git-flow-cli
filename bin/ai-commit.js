@@ -40,6 +40,9 @@ let debug = false;
 let debugContext = false;
 let yes = false;
 let dryRun = false;
+let progress = false;
+let stream = false;
+let think = false;
 let jiraContextBlock = "";
 let jiraIssueType = "";
 const excludedLabels = new Set();
@@ -182,6 +185,9 @@ for (let i = 0; i < args.length; i++) {
       "--debug-context",
       "--debug-windows",
       "--dry-run",
+      "--progress",
+      "--stream",
+      "--think",
       "-y",
       "--yes",
       "--auto",
@@ -201,6 +207,13 @@ for (let i = 0; i < args.length; i++) {
     debugContext = true;
   } else if (args[i] === "--dry-run" || args[i] === "--preview") {
     dryRun = true;
+  } else if (args[i] === "--progress") {
+    progress = true;
+  } else if (args[i] === "--stream") {
+    stream = true;
+    progress = true;
+  } else if (args[i] === "--think") {
+    think = true;
   } else if (args[i] === "-y" || args[i] === "--yes" || args[i] === "--auto") {
     yes = true;
   }
@@ -886,6 +899,9 @@ async function generateBranchVariants() {
     temperature: 0.2,
     debug,
     debugLabel: "branch-variants-primary",
+    progress,
+    stream,
+    think,
   });
   const genElapsed = ((Date.now() - genStartTime) / 1000).toFixed(2);
 
@@ -906,6 +922,9 @@ async function generateBranchVariants() {
       temperature: 0.1,
       debug,
       debugLabel: "branch-variants-recovery",
+      progress,
+      stream,
+      think,
     });
     printTokenUsage(recovery.usage, { provider, modelName, config });
     results = parseJsonBranchVariants(recovery.text);
@@ -935,6 +954,9 @@ async function generateCommitVariants() {
     temperature: 0.2,
     debug,
     debugLabel: "commit-variants-primary",
+    progress,
+    stream,
+    think,
   });
   const genElapsed = ((Date.now() - genStartTime) / 1000).toFixed(2);
 
@@ -955,6 +977,9 @@ async function generateCommitVariants() {
       temperature: 0.1,
       debug,
       debugLabel: "commit-variants-recovery",
+      progress,
+      stream,
+      think,
     });
     printTokenUsage(recovery.usage, { provider, modelName, config });
     results = parseJsonCommitVariants(recovery.text);
@@ -1058,6 +1083,14 @@ async function run() {
   }
   if (dryRun) {
     console.log("## INFO: Dry run enabled; branch rename, commit, push, and PR creation will be skipped");
+  }
+  if (stream) {
+    console.log("## INFO: Streaming enabled; raw local model output will be printed while it is generated");
+  } else if (progress) {
+    console.log("## INFO: Progress enabled; waiting model calls will print heartbeat messages");
+  }
+  if (think) {
+    console.log("## INFO: Local Ollama thinking mode enabled");
   }
   if (excludedLabels.size > 0) {
     console.log(`## INFO: Excluding labels: ${Array.from(excludedLabels).join(", ")}`);

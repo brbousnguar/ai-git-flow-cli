@@ -134,6 +134,7 @@ ai-commit -l "bug,enhancement" -m "hotfix, critical security patch"
 ai-commit -m "update RAML customer request type" -n bug
 ai-commit --yes -t SFSC-1573 -m "implement SSO authentication"
 ai-commit --dry-run --local-ollama
+ai-commit --dry-run --local-ollama --stream --progress
 ```
 
 Options:
@@ -147,6 +148,9 @@ Options:
 - `-d, --debug`: print LLM request details
 - `--debug-context`: print context windows used for generation
 - `--dry-run, --preview`: generate and select branch/commit values without renaming the branch, committing, pushing, or creating a PR
+- `--progress`: print heartbeat messages while waiting for local model calls
+- `--stream`: stream raw local Ollama output tokens while they are generated; also enables `--progress`
+- `--think`: enable local Ollama thinking mode; by default the CLI disables thinking for faster structured branch and commit generation
 - `-y, --yes, --auto`: non-interactive mode; choose variant 1 for the branch and commit message
 
 When `-m, --message` is provided, that developer context is treated as the highest-priority intent. JIRA and diff context are skipped for generation so naming and commit wording stay aligned with the supplied message.
