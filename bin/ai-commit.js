@@ -5,22 +5,41 @@ import { readFileSync, writeFileSync, unlinkSync } from "fs";
 import * as readline from "readline";
 import { tmpdir } from "os";
 import path from "path";
-import { loadConfigAndEnv, initOpenAIClient, printTokenUsage, generateText, setupCliConsole, formatLocalEndpointFallback, isLocalConnectionError } from "../src/ai-common.js";
+import {
+  loadConfigAndEnv,
+  initOpenAIClient,
+  printTokenUsage,
+  generateText,
+  setupCliConsole,
+  formatLocalEndpointFallback,
+  isLocalConnectionError,
+  isLocalModelRunnerError,
+  parseAiRuntimeArgs,
+  applyAiRuntimeOverrides,
+} from "../src/ai-common.js";
 
 // Load config and env
-const { config, __dirname } = loadConfigAndEnv(import.meta.url);
+const { config: loadedConfig, __dirname } = loadConfigAndEnv(import.meta.url);
+const args = process.argv.slice(2);
+const aiRuntime = applyAiRuntimeOverrides(loadedConfig, parseAiRuntimeArgs(args));
+const config = aiRuntime.config;
 // Configure client based on provider
-const { client, modelName, provider, providerLabel } = initOpenAIClient(config, __dirname);
+const { client, modelName, provider, providerLabel } = initOpenAIClient(
+  config,
+  __dirname,
+  aiRuntime.modelOverride,
+  aiRuntime.runtimeLabel,
+);
 setupCliConsole();
 
 // Parse command-line arguments for ticket number
-const args = process.argv.slice(2);
 let ticketNumber = null;
 let developerMessage = null;
 let labels = null;
 let debug = false;
 let debugContext = false;
 let yes = false;
+let dryRun = false;
 let jiraContextBlock = "";
 let jiraIssueType = "";
 const excludedLabels = new Set();
@@ -162,6 +181,7 @@ for (let i = 0; i < args.length; i++) {
       "--debug",
       "--debug-context",
       "--debug-windows",
+      "--dry-run",
       "-y",
       "--yes",
       "--auto",
@@ -179,6 +199,8 @@ for (let i = 0; i < args.length; i++) {
     debug = true;
   } else if (args[i] === "--debug-context" || args[i] === "--debug-windows") {
     debugContext = true;
+  } else if (args[i] === "--dry-run" || args[i] === "--preview") {
+    dryRun = true;
   } else if (args[i] === "-y" || args[i] === "--yes" || args[i] === "--auto") {
     yes = true;
   }
@@ -289,8 +311,9 @@ ${branchNamingGuide}
 Additional workflow rules:
 - Generate branch variants only.
 - Developer Context (-m) is the primary intent source when present.
-- Without Developer Context, use JIRA context as the branch naming source.
-- Do not use git diff for branch naming unless Developer Context explicitly mentions it.
+- Without Developer Context, use JIRA context as the branch naming source when a ticket is provided.
+- When neither Developer Context nor JIRA context is available, infer the branch name from the staged git diff.
+- For diff-only branch naming, describe the highest-impact functional change shown by the diff; ignore incidental formatting, dependency lockfile noise, generated files, and broad file names.
 - Override the guide output rule for this CLI run: return 4 variants, not 1 branch.
 
 Output:
@@ -525,13 +548,18 @@ function buildPrBodyFromCommitLog(rawCommitLog) {
 function getBranchPromptContext() {
   const trimmedDeveloperMessage = String(developerMessage || "").trim();
   const hasDeveloperContext = trimmedDeveloperMessage.length > 0;
+  const hasJiraContext = String(jiraContextBlock || "").trim().length > 0;
+  const useDiffContext = !hasDeveloperContext && !hasJiraContext;
 
   return {
     trimmedDeveloperMessage,
     promptJiraContext: hasDeveloperContext ? "" : jiraContextBlock,
+    promptDiff: useDiffContext ? effectiveDiff : "",
     excludedContextReason: hasDeveloperContext
-      ? "Developer Context (-m) is present, so JIRA context is excluded from branch generation."
-      : "",
+      ? "Developer Context (-m) is present, so JIRA context and diff context are excluded from branch generation."
+      : hasJiraContext
+        ? "JIRA context is present, so diff context is excluded from branch generation."
+        : "",
   };
 }
 
@@ -552,12 +580,19 @@ function buildBranchPrompt() {
   const {
     trimmedDeveloperMessage,
     promptJiraContext,
+    promptDiff,
   } = getBranchPromptContext();
 
   return `
 Generate 4 different branch name variants.
 
 ${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${trimmedDeveloperMessage ? `Developer Context (-m, highest priority):\n${trimmedDeveloperMessage}\n\nUse concrete wording from Developer Context in every branch.\n\n` : ""}${promptJiraContext ? `JIRA Ticket Context:\n${promptJiraContext}\n\n` : ""}
+${promptDiff ? `Code Changes (staged git diff, use as the only intent source):
+---
+${promptDiff}
+---
+
+` : ""}
 Output exactly:
 Variant 1:
 Branch: [branch name]
@@ -713,6 +748,7 @@ function buildBranchRecoveryPrompt() {
   const {
     trimmedDeveloperMessage,
     promptJiraContext,
+    promptDiff,
   } = getBranchPromptContext();
 
   return `
@@ -723,6 +759,11 @@ JSON schema:
 [{"branch":"..."}]
 
 ${ticketNumber ? `Ticket: ${ticketNumber}\n` : ""}${trimmedDeveloperMessage ? `Developer Context (-m, highest priority):\n${trimmedDeveloperMessage}\n\n` : ""}${promptJiraContext ? `JIRA Ticket Context:\n${promptJiraContext}\n\n` : ""}
+${promptDiff ? `Code Changes (staged git diff, use as the only intent source):
+---
+${promptDiff}
+---
+` : ""}
 `;
 }
 
@@ -770,6 +811,7 @@ function printBranchContextWindows({ userPrompt, recoveryPrompt = "" }) {
   const {
     trimmedDeveloperMessage,
     promptJiraContext,
+    promptDiff,
     excludedContextReason,
   } = getBranchPromptContext();
   console.log("\n## DEBUG: === Branch Context Windows ===");
@@ -787,6 +829,11 @@ function printBranchContextWindows({ userPrompt, recoveryPrompt = "" }) {
     printContextWindow("JIRA ticket context", promptJiraContext);
   } else if (jiraContextBlock) {
     console.log("\n## DEBUG: JIRA ticket context excluded from branch prompt");
+  }
+  if (promptDiff) {
+    printContextWindow("effective staged diff", promptDiff);
+  } else if (diff.trim()) {
+    console.log("\n## DEBUG: staged diff excluded from branch prompt");
   }
   printContextWindow("branch user prompt", userPrompt);
   if (recoveryPrompt) {
@@ -1009,6 +1056,9 @@ async function run() {
   if (yes) {
     console.log("## INFO: Non-interactive mode enabled; defaulting selections to option 1");
   }
+  if (dryRun) {
+    console.log("## INFO: Dry run enabled; branch rename, commit, push, and PR creation will be skipped");
+  }
   if (excludedLabels.size > 0) {
     console.log(`## INFO: Excluding labels: ${Array.from(excludedLabels).join(", ")}`);
   }
@@ -1056,6 +1106,9 @@ async function run() {
       
       // Step 2: Rename branch
       console.log(`\n## OK: Selected branch: ${selectedBranch}`);
+      if (dryRun) {
+        console.log("## INFO: Dry run: skipping branch rename");
+      } else {
       console.log("\n## INFO: Renaming branch...");
       
       try {
@@ -1064,6 +1117,7 @@ async function run() {
       } catch (error) {
         console.error("## ERROR: Branch rename failed:", error.message);
         process.exit(1);
+      }
       }
 
     // Step 3: Select commit message and labels
@@ -1089,6 +1143,9 @@ async function run() {
     if (selectedLabels) {
       console.log(`## INFO: Labels: ${selectedLabels}`);
     }
+    if (dryRun) {
+      console.log("## INFO: Dry run: skipping commit, push, and PR creation");
+    } else {
     console.log("\n## INFO: Creating commit...");
     
     try {
@@ -1143,6 +1200,7 @@ async function run() {
         console.error("## ERROR: PR creation failed:", error.message);
         console.log("## INFO: Make sure GitHub CLI (gh) is installed and authenticated");
       }
+    }
 
     const elapsedSeconds = (Date.now() - startTime) / 1000;
     const timeStr = elapsedSeconds >= 60 
@@ -1155,6 +1213,13 @@ async function run() {
       console.error("## ERROR: Cannot connect to any configured Ollama endpoint.");
       console.error(`## INFO: Fallback order: ${formatLocalEndpointFallback(config)}`);
       console.error("## INFO: Make sure the Mac Mini Ollama server is reachable and local Ollama is running if you want fallback.");
+    } else if (provider === "local" && isLocalModelRunnerError(error)) {
+      console.error("## ERROR: Local Ollama model runner stopped unexpectedly.");
+      console.error(`## INFO: Endpoint: ${error.ollamaEndpointName || "local"} (${error.ollamaEndpointBaseURL || "configured URL"})`);
+      console.error(`## INFO: Model: ${error.ollamaModelName || modelName}`);
+      console.error("## INFO: Ollama accepted the request but killed the model runner while generating.");
+      console.error("## INFO: If this repeats on localhost, try restarting Ollama or using a smaller local model such as phi3:mini or gemma3:1b.");
+      console.error("## INFO: Or use the configured fallback/hosted endpoint: ai-commit --ollama-auto or ai-commit --hosted-ollama");
     } else {
       console.error("## ERROR:", error.message);
     }

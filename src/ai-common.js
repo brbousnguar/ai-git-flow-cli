@@ -80,6 +80,151 @@ function parseProvider(rawProvider = "local") {
   };
 }
 
+export function parseAiRuntimeArgs(args = []) {
+  const runtime = {
+    provider: null,
+    model: null,
+    ollamaUrl: null,
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if ((arg === "--provider" || arg === "--ai-provider") && args[i + 1]) {
+      runtime.provider = args[i + 1];
+      i++;
+    } else if (arg.startsWith("--provider=")) {
+      runtime.provider = arg.slice("--provider=".length);
+    } else if (arg.startsWith("--ai-provider=")) {
+      runtime.provider = arg.slice("--ai-provider=".length);
+    } else if (arg === "--cloud") {
+      runtime.provider = "cloud";
+    } else if (arg === "--local" || arg === "--ollama-auto" || arg === "--ollama-fallback") {
+      runtime.provider = "local";
+    } else if (arg === "--pure-local" || arg === "--local-ollama" || arg === "--localhost-ollama") {
+      runtime.provider = "pure-local";
+    } else if (arg === "--hosted-ollama" || arg === "--hosted") {
+      runtime.provider = "hosted-ollama";
+    } else if ((arg === "--model" || arg === "--ai-model") && args[i + 1]) {
+      runtime.model = args[i + 1];
+      i++;
+    } else if (arg.startsWith("--model=")) {
+      runtime.model = arg.slice("--model=".length);
+    } else if (arg.startsWith("--ai-model=")) {
+      runtime.model = arg.slice("--ai-model=".length);
+    } else if ((arg === "--ollama-url" || arg === "--ollama-base-url") && args[i + 1]) {
+      runtime.ollamaUrl = args[i + 1];
+      i++;
+    } else if (arg.startsWith("--ollama-url=")) {
+      runtime.ollamaUrl = arg.slice("--ollama-url=".length);
+    } else if (arg.startsWith("--ollama-base-url=")) {
+      runtime.ollamaUrl = arg.slice("--ollama-base-url=".length);
+    }
+  }
+
+  return runtime;
+}
+
+function normalizeBaseURL(rawUrl) {
+  const trimmed = String(rawUrl || "").trim();
+  if (!trimmed) return "";
+  return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
+}
+
+function isLocalhostBaseURL(rawUrl) {
+  const text = String(rawUrl || "").toLowerCase();
+  return text.includes("localhost") || text.includes("127.0.0.1") || text.includes("[::1]");
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function selectLocalEndpoints(localConfig = {}, mode = "local") {
+  const configuredEndpoints = Array.isArray(localConfig.endpoints) ? localConfig.endpoints : [];
+  if (mode === "local") return configuredEndpoints;
+
+  const matcher = mode === "pure-local"
+    ? (endpoint) => isLocalhostBaseURL(endpoint.baseURL || localConfig.baseURL)
+    : (endpoint) => !isLocalhostBaseURL(endpoint.baseURL || localConfig.baseURL);
+  const selected = configuredEndpoints.filter(matcher);
+
+  if (selected.length > 0) return selected;
+  if (mode === "pure-local") {
+    return [
+      {
+        name: "pure-local",
+        baseURL: localConfig.baseURL || "http://localhost:11434/v1",
+        default: localConfig.default,
+        models: localConfig.models,
+      },
+    ];
+  }
+  return [];
+}
+
+export function applyAiRuntimeOverrides(config, runtime = {}) {
+  const providerMode = String(runtime.provider || "").trim().toLowerCase();
+  const model = String(runtime.model || "").trim();
+  const ollamaUrl = normalizeBaseURL(runtime.ollamaUrl);
+
+  if (!providerMode && !model && !ollamaUrl) {
+    return { config, modelOverride: null, runtimeLabel: "" };
+  }
+
+  const effectiveConfig = JSON.parse(JSON.stringify(config));
+  let runtimeLabel = "";
+
+  if (providerMode) {
+    if (["cloud", "openai"].includes(providerMode)) {
+      effectiveConfig.provider = "cloud";
+      runtimeLabel = "cloud";
+    } else if (["local", "ollama", "ollama-auto", "ollama-fallback"].includes(providerMode)) {
+      effectiveConfig.provider = "local";
+      runtimeLabel = "ollama-auto";
+    } else if (["pure-local", "local-ollama", "localhost-ollama", "localhost", "local-only"].includes(providerMode)) {
+      effectiveConfig.provider = "local";
+      effectiveConfig.local = {
+        ...(effectiveConfig.local || {}),
+        endpoints: selectLocalEndpoints(effectiveConfig.local, "pure-local"),
+      };
+      runtimeLabel = "local-ollama";
+    } else if (["hosted-ollama", "hosted", "remote-ollama"].includes(providerMode)) {
+      effectiveConfig.provider = "local";
+      effectiveConfig.local = {
+        ...(effectiveConfig.local || {}),
+        endpoints: selectLocalEndpoints(effectiveConfig.local, "hosted-ollama"),
+      };
+      runtimeLabel = "hosted-ollama";
+    } else {
+      console.error(`## ERROR: Unknown provider '${runtime.provider}'. Use cloud, local, pure-local, or hosted-ollama.`);
+      process.exit(1);
+    }
+  }
+
+  if (ollamaUrl) {
+    effectiveConfig.provider = "local";
+    effectiveConfig.local = {
+      ...(effectiveConfig.local || {}),
+      endpoints: [
+        {
+          name: providerMode === "pure-local" ? "pure-local" : "cli-ollama",
+          baseURL: ollamaUrl,
+          default: model || effectiveConfig.local?.default,
+          models: effectiveConfig.local?.models || {},
+        },
+      ],
+    };
+    runtimeLabel = "ollama-url";
+  }
+
+  return {
+    config: effectiveConfig,
+    modelOverride: model || null,
+    runtimeLabel,
+  };
+}
+
 function buildLocalEndpointConfigs(localConfig = {}, effectiveModelOverride = null) {
   const configuredEndpoints = Array.isArray(localConfig.endpoints) ? localConfig.endpoints : [];
   const endpoints = configuredEndpoints.length > 0
@@ -103,7 +248,7 @@ function buildLocalEndpointConfigs(localConfig = {}, effectiveModelOverride = nu
     .filter((endpoint) => endpoint.baseURL && endpoint.modelName);
 }
 
-export function initOpenAIClient(config, __dirname, modelOverrideArg) {
+export function initOpenAIClient(config, __dirname, modelOverrideArg, runtimeLabel = "") {
   let client;
   let modelName;
   let providerLabel;
@@ -120,7 +265,7 @@ export function initOpenAIClient(config, __dirname, modelOverrideArg) {
       apiKey: process.env.OPENAI_API_KEY,
     });
     modelName = effectiveModelOverride || config.cloud.model;
-    providerLabel = provider;
+    providerLabel = runtimeLabel || provider;
   } else {
     const localEndpoints = buildLocalEndpointConfigs(config.local, effectiveModelOverride);
     if (localEndpoints.length === 0) {
@@ -142,7 +287,9 @@ export function initOpenAIClient(config, __dirname, modelOverrideArg) {
     });
     client.__localFallbacks = clients;
     modelName = clients[0].modelName;
-    providerLabel = clients[0].name || provider;
+    providerLabel = runtimeLabel
+      ? `${runtimeLabel}:${clients[0].name || provider}`
+      : clients[0].name || provider;
   }
   return { client, modelName, provider, providerLabel };
 }
@@ -162,6 +309,21 @@ export function isLocalConnectionError(error) {
 
   const message = String(error?.message || error?.cause?.message || "").toLowerCase();
   return message.includes("connection error") || message.includes("fetch failed");
+}
+
+export function isLocalModelRunnerError(error) {
+  const status = error?.status || error?.response?.status;
+  const message = String(error?.message || error?.cause?.message || "").toLowerCase();
+
+  return status >= 500 && (
+    message.includes("model runner") ||
+    message.includes("resource limitations") ||
+    message.includes("unexpectedly stopped")
+  );
+}
+
+function shouldRetryLocalModelRunner(error, attempt) {
+  return attempt === 1 && isLocalModelRunnerError(error);
 }
 
 function extractTextFromResponsesOutput(response) {
@@ -282,25 +444,39 @@ export async function generateText({
     if (Number.isFinite(temperature)) request.temperature = temperature;
     if (Number.isFinite(maxOutputTokens)) request.max_tokens = maxOutputTokens;
 
-    try {
-      if (debug && localFallbacks.length > 1) {
-        console.log(`## DEBUG: local endpoint: ${endpoint.name} (${endpoint.baseURL || "configured client"})`);
-        console.log(`## DEBUG: local endpoint model: ${request.model}`);
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        if (debug && (localFallbacks.length > 1 || attempt > 1)) {
+          console.log(`## DEBUG: local endpoint: ${endpoint.name} (${endpoint.baseURL || "configured client"})`);
+          console.log(`## DEBUG: local endpoint model: ${request.model}`);
+          console.log(`## DEBUG: local endpoint attempt: ${attempt}`);
+        }
+
+        const response = await endpoint.client.chat.completions.create(request);
+        return {
+          text: response?.choices?.[0]?.message?.content?.trim() || "",
+          usage: response?.usage || null,
+          raw: response,
+        };
+      } catch (error) {
+        lastError = error;
+        error.ollamaEndpointName = endpoint.name;
+        error.ollamaEndpointBaseURL = endpoint.baseURL;
+        error.ollamaModelName = request.model;
+
+        if (shouldRetryLocalModelRunner(error, attempt)) {
+          console.warn(`## WARN: Local Ollama endpoint '${endpoint.name}' model runner stopped; retrying once.`);
+          await sleep(1500);
+          continue;
+        }
+
+        const hasNextEndpoint = endpoint !== localFallbacks[localFallbacks.length - 1];
+        if (!hasNextEndpoint) break;
+
+        const reason = error?.message ? ` ${error.message}` : "";
+        console.warn(`## WARN: Local Ollama endpoint '${endpoint.name}' failed; trying next endpoint.${reason}`);
+        break;
       }
-
-      const response = await endpoint.client.chat.completions.create(request);
-      return {
-        text: response?.choices?.[0]?.message?.content?.trim() || "",
-        usage: response?.usage || null,
-        raw: response,
-      };
-    } catch (error) {
-      lastError = error;
-      const hasNextEndpoint = endpoint !== localFallbacks[localFallbacks.length - 1];
-      if (!hasNextEndpoint) break;
-
-      const reason = error?.message ? ` ${error.message}` : "";
-      console.warn(`## WARN: Local Ollama endpoint '${endpoint.name}' failed; trying next endpoint.${reason}`);
     }
   }
 

@@ -5,16 +5,34 @@ import { writeFileSync, unlinkSync } from "fs";
 import * as readline from "readline";
 import { tmpdir } from "os";
 import path from "path";
-import { loadConfigAndEnv, initOpenAIClient, printTokenUsage, generateText, setupCliConsole, formatLocalEndpointFallback, isLocalConnectionError } from "../src/ai-common.js";
+import {
+  loadConfigAndEnv,
+  initOpenAIClient,
+  printTokenUsage,
+  generateText,
+  setupCliConsole,
+  formatLocalEndpointFallback,
+  isLocalConnectionError,
+  isLocalModelRunnerError,
+  parseAiRuntimeArgs,
+  applyAiRuntimeOverrides,
+} from "../src/ai-common.js";
 
 // Load config and env
-const { config, __dirname } = loadConfigAndEnv(import.meta.url);
+const { config: loadedConfig, __dirname } = loadConfigAndEnv(import.meta.url);
+const args = process.argv.slice(2);
+const aiRuntime = applyAiRuntimeOverrides(loadedConfig, parseAiRuntimeArgs(args));
+const config = aiRuntime.config;
 // Configure client based on provider
-const { client, modelName, provider, providerLabel } = initOpenAIClient(config, __dirname);
+const { client, modelName, provider, providerLabel } = initOpenAIClient(
+  config,
+  __dirname,
+  aiRuntime.modelOverride,
+  aiRuntime.runtimeLabel,
+);
 setupCliConsole();
 
 // Parse command-line arguments for version/tag
-const args = process.argv.slice(2);
 let version = null;
 let labels = null;
 let debug = false;
@@ -472,6 +490,13 @@ async function run() {
       console.error("❌ Cannot connect to any configured Ollama endpoint.");
       console.error(`   Fallback order: ${formatLocalEndpointFallback(config)}`);
       console.error("   Make sure the Mac Mini Ollama server is reachable and local Ollama is running if you want fallback.");
+    } else if (provider === "local" && isLocalModelRunnerError(error)) {
+      console.error("❌ Local Ollama model runner stopped unexpectedly.");
+      console.error(`   Endpoint: ${error.ollamaEndpointName || "local"} (${error.ollamaEndpointBaseURL || "configured URL"})`);
+      console.error(`   Model: ${error.ollamaModelName || modelName}`);
+      console.error("   Ollama accepted the request but killed the model runner while generating.");
+      console.error("   If this repeats on localhost, try restarting Ollama or using a smaller local model such as phi3:mini or gemma3:1b.");
+      console.error("   Or use the configured fallback/hosted endpoint: ai-release --ollama-auto or ai-release --hosted-ollama");
     } else {
       console.error("❌ Error:", error.message);
     }

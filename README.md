@@ -86,6 +86,29 @@ or:
 
 When `local.endpoints` is configured, the CLI tries them in order. The Mac Mini Ollama server is checked first, then the local machine is used as fallback. Each endpoint can keep its own default model list, so Mac Mini models do not need to match local models.
 
+You can override the configured AI runtime for a single CLI run:
+
+```bash
+ai-commit --cloud
+ai-commit --ollama-auto
+ai-commit --local-ollama
+ai-commit --hosted-ollama
+ai-commit --provider cloud --model gpt-5.1-codex-mini
+ai-commit --ollama-url http://localhost:11434/v1 --model qwen2.5-coder:14b
+```
+
+Runtime options are supported by both `ai-commit` and `ai-release`:
+
+- `--provider <cloud|ollama-auto|local-ollama|hosted-ollama>`: override `config.json` provider selection
+- `--cloud`: use OpenAI cloud for this run
+- `--ollama-auto, --ollama-fallback`: use configured Ollama endpoints and fallback order, for example Mac Mini first and this machine second
+- `--local-ollama, --localhost-ollama`: use only this machine's localhost Ollama endpoint, skipping Mac Mini
+- `--hosted-ollama, --hosted`: use only non-localhost Ollama endpoints from `local.endpoints`
+- `--model <name>`: override the configured model for this run
+- `--ollama-url <url>`: use one explicit Ollama-compatible `/v1` base URL for this run
+
+Compatibility aliases are still supported: `--local` means `--ollama-auto`, and `--pure-local` means `--local-ollama`.
+
 ## ai-commit
 
 Generates branch-name variants, commit-message variants, GitHub labels, commits staged changes, pushes the branch, and creates a PR.
@@ -110,6 +133,7 @@ ai-commit -t SFSC-1573 -m "new feature, implement SSO authentication"
 ai-commit -l "bug,enhancement" -m "hotfix, critical security patch"
 ai-commit -m "update RAML customer request type" -n bug
 ai-commit --yes -t SFSC-1573 -m "implement SSO authentication"
+ai-commit --dry-run --local-ollama
 ```
 
 Options:
@@ -122,6 +146,7 @@ Options:
 - `-bug`, `-documentation`, `-enhancement`: shorthand exclusion flags
 - `-d, --debug`: print LLM request details
 - `--debug-context`: print context windows used for generation
+- `--dry-run, --preview`: generate and select branch/commit values without renaming the branch, committing, pushing, or creating a PR
 - `-y, --yes, --auto`: non-interactive mode; choose variant 1 for the branch and commit message
 
 When `-m, --message` is provided, that developer context is treated as the highest-priority intent. JIRA and diff context are skipped for generation so naming and commit wording stay aligned with the supplied message.
@@ -136,7 +161,7 @@ The `--yes` flag keeps the workflow non-interactive while still using this CLI f
 
 Branch and commit generation use split context windows:
 
-- Branch names use `prompts/branch-naming.md` plus JIRA ticket context, unless `-m` is provided.
+- Branch names use `prompts/branch-naming.md` plus JIRA ticket context, unless `-m` is provided. If neither `-m` nor JIRA context is available, branch names are inferred from the staged git diff.
 - Commit messages use `prompts/commit-message.md` plus the staged git diff, unless `-m` is provided.
 
 When a JIRA ticket is provided, the ticket type is used to correct GitHub labels: Task/Tache maps to `enhancement`, and Bug maps to `bug`. Explicit `-l, --labels` values still take priority.

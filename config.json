@@ -1,5 +1,5 @@
 {
-  "provider": "local",
+  "provider": "cloud",
   "local": {
     "default": "qwen2.5-coder:14b",
     "models": {
