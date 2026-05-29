@@ -214,6 +214,18 @@ It fetches remotes, summarizes commit messages grouped by ticket ID, then can cr
 
 Use `-d, --debug` to print release LLM request details.
 
+## Automatic GitHub Releases
+
+When a pull request from `develop` into `main` is merged, GitHub Actions creates the next patch tag and a GitHub Release with generated release notes.
+
+Examples:
+
+- No existing tags: creates `v1.0.0`
+- Latest tag `v1.0.0`: creates `v1.0.1`
+- Latest tag `v1.2.9`: creates `v1.2.10`
+
+The workflow can also be run manually from the GitHub Actions tab.
+
 ## Requirements
 
 - Node.js 18+
