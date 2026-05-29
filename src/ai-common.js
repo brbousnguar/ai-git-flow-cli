@@ -90,35 +90,29 @@ export function parseAiRuntimeArgs(args = []) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
 
-    if ((arg === "--provider" || arg === "--ai-provider") && args[i + 1]) {
+    if (arg === "--provider" && args[i + 1]) {
       runtime.provider = args[i + 1];
       i++;
     } else if (arg.startsWith("--provider=")) {
       runtime.provider = arg.slice("--provider=".length);
-    } else if (arg.startsWith("--ai-provider=")) {
-      runtime.provider = arg.slice("--ai-provider=".length);
     } else if (arg === "--cloud") {
       runtime.provider = "cloud";
-    } else if (arg === "--local" || arg === "--ollama-auto" || arg === "--ollama-fallback") {
-      runtime.provider = "local";
-    } else if (arg === "--pure-local" || arg === "--local-ollama" || arg === "--localhost-ollama") {
-      runtime.provider = "pure-local";
-    } else if (arg === "--hosted-ollama" || arg === "--hosted") {
+    } else if (arg === "--ollama-auto") {
+      runtime.provider = "ollama-auto";
+    } else if (arg === "--local-ollama") {
+      runtime.provider = "local-ollama";
+    } else if (arg === "--hosted-ollama") {
       runtime.provider = "hosted-ollama";
-    } else if ((arg === "--model" || arg === "--ai-model") && args[i + 1]) {
+    } else if (arg === "--model" && args[i + 1]) {
       runtime.model = args[i + 1];
       i++;
     } else if (arg.startsWith("--model=")) {
       runtime.model = arg.slice("--model=".length);
-    } else if (arg.startsWith("--ai-model=")) {
-      runtime.model = arg.slice("--ai-model=".length);
-    } else if ((arg === "--ollama-url" || arg === "--ollama-base-url") && args[i + 1]) {
+    } else if (arg === "--ollama-url" && args[i + 1]) {
       runtime.ollamaUrl = args[i + 1];
       i++;
     } else if (arg.startsWith("--ollama-url=")) {
       runtime.ollamaUrl = arg.slice("--ollama-url=".length);
-    } else if (arg.startsWith("--ollama-base-url=")) {
-      runtime.ollamaUrl = arg.slice("--ollama-base-url=".length);
     }
   }
 
@@ -150,16 +144,16 @@ function selectLocalEndpoints(localConfig = {}, mode = "local") {
   const configuredEndpoints = Array.isArray(localConfig.endpoints) ? localConfig.endpoints : [];
   if (mode === "local") return configuredEndpoints;
 
-  const matcher = mode === "pure-local"
+  const matcher = mode === "local-ollama"
     ? (endpoint) => isLocalhostBaseURL(endpoint.baseURL || localConfig.baseURL)
     : (endpoint) => !isLocalhostBaseURL(endpoint.baseURL || localConfig.baseURL);
   const selected = configuredEndpoints.filter(matcher);
 
   if (selected.length > 0) return selected;
-  if (mode === "pure-local") {
+  if (mode === "local-ollama") {
     return [
       {
-        name: "pure-local",
+        name: "local-ollama",
         baseURL: localConfig.baseURL || "http://localhost:11434/v1",
         default: localConfig.default,
         models: localConfig.models,
@@ -182,20 +176,20 @@ export function applyAiRuntimeOverrides(config, runtime = {}) {
   let runtimeLabel = "";
 
   if (providerMode) {
-    if (["cloud", "openai"].includes(providerMode)) {
+    if (providerMode === "cloud") {
       effectiveConfig.provider = "cloud";
       runtimeLabel = "cloud";
-    } else if (["local", "ollama", "ollama-auto", "ollama-fallback"].includes(providerMode)) {
+    } else if (providerMode === "ollama-auto") {
       effectiveConfig.provider = "local";
       runtimeLabel = "ollama-auto";
-    } else if (["pure-local", "local-ollama", "localhost-ollama", "localhost", "local-only"].includes(providerMode)) {
+    } else if (providerMode === "local-ollama") {
       effectiveConfig.provider = "local";
       effectiveConfig.local = {
         ...(effectiveConfig.local || {}),
-        endpoints: selectLocalEndpoints(effectiveConfig.local, "pure-local"),
+        endpoints: selectLocalEndpoints(effectiveConfig.local, "local-ollama"),
       };
       runtimeLabel = "local-ollama";
-    } else if (["hosted-ollama", "hosted", "remote-ollama"].includes(providerMode)) {
+    } else if (providerMode === "hosted-ollama") {
       effectiveConfig.provider = "local";
       effectiveConfig.local = {
         ...(effectiveConfig.local || {}),
@@ -203,7 +197,7 @@ export function applyAiRuntimeOverrides(config, runtime = {}) {
       };
       runtimeLabel = "hosted-ollama";
     } else {
-      console.error(`## ERROR: Unknown provider '${runtime.provider}'. Use cloud, local, pure-local, or hosted-ollama.`);
+      console.error(`## ERROR: Unknown provider '${runtime.provider}'. Use cloud, ollama-auto, local-ollama, or hosted-ollama.`);
       process.exit(1);
     }
   }
@@ -214,7 +208,7 @@ export function applyAiRuntimeOverrides(config, runtime = {}) {
       ...(effectiveConfig.local || {}),
       endpoints: [
         {
-          name: providerMode === "pure-local" ? "pure-local" : "cli-ollama",
+          name: providerMode === "local-ollama" ? "local-ollama" : "cli-ollama",
           baseURL: ollamaUrl,
           default: model || effectiveConfig.local?.default,
           models: effectiveConfig.local?.models || {},
