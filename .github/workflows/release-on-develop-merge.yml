@@ -1,0 +1,88 @@
+name: Release on develop merge
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: release-on-develop-merge
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Create tag and release
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.merged == true &&
+        github.event.pull_request.base.ref == 'main' &&
+        github.event.pull_request.head.ref == 'develop'
+      )
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Calculate next tag
+        id: version
+        shell: bash
+        run: |
+          latest_tag="$(git tag --list 'v*' --sort=-version:refname | head -n 1)"
+
+          if [[ -z "$latest_tag" ]]; then
+            next_tag="v1.0.0"
+          elif [[ "$latest_tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            patch="${BASH_REMATCH[3]}"
+            next_tag="v${major}.${minor}.$((patch + 1))"
+          else
+            echo "Latest tag '$latest_tag' is not a supported vMAJOR.MINOR.PATCH tag." >&2
+            exit 1
+          fi
+
+          if git rev-parse "$next_tag" >/dev/null 2>&1; then
+            echo "Tag $next_tag already exists." >&2
+            exit 1
+          fi
+
+          echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
+          echo "next_tag=$next_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        run: |
+          git tag -a "${{ steps.version.outputs.next_tag }}" -m "Release ${{ steps.version.outputs.next_tag }}"
+          git push origin "${{ steps.version.outputs.next_tag }}"
+
+      - name: Create GitHub release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT_TAG: ${{ steps.version.outputs.next_tag }}
+          LATEST_TAG: ${{ steps.version.outputs.latest_tag }}
+        run: |
+          if [[ -n "$LATEST_TAG" ]]; then
+            gh release create "$NEXT_TAG" \
+              --title "$NEXT_TAG" \
+              --generate-notes \
+              --notes-start-tag "$LATEST_TAG"
+          else
+            gh release create "$NEXT_TAG" \
+              --title "$NEXT_TAG" \
+              --generate-notes
+          fi

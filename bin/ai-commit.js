@@ -165,47 +165,17 @@ for (let i = 0; i < args.length; i++) {
   } else if ((args[i] === "-l" || args[i] === "--labels") && args[i + 1]) {
     labels = normalizeLabels(args[i + 1]);
     i++;
-  } else if ((args[i] === "-n" || args[i] === "--exclude-label" || args[i] === "--exclude-labels") && args[i + 1]) {
+  } else if ((args[i] === "-n" || args[i] === "--exclude-label") && args[i + 1]) {
     const excluded = normalizeLabelName(args[i + 1]);
     if (ALLOWED_LABELS.has(excluded)) {
       excludedLabels.add(excluded);
     }
     i++;
-  } else if (
-    /^-[a-z][a-z-]*$/i.test(args[i]) &&
-    ![
-      "-t",
-      "--ticket",
-      "-m",
-      "--message",
-      "-l",
-      "--labels",
-      "-d",
-      "--debug",
-      "--debug-context",
-      "--debug-windows",
-      "--dry-run",
-      "--progress",
-      "--stream",
-      "--think",
-      "-y",
-      "--yes",
-      "--auto",
-      "-n",
-      "--exclude-label",
-      "--exclude-labels",
-    ].includes(args[i])
-  ) {
-    // Shorthand negative labels: -bug, -documentation, -enhancement, etc.
-    const excluded = normalizeLabelName(args[i]);
-    if (ALLOWED_LABELS.has(excluded)) {
-      excludedLabels.add(excluded);
-    }
   } else if (args[i] === "-d" || args[i] === "--debug") {
     debug = true;
-  } else if (args[i] === "--debug-context" || args[i] === "--debug-windows") {
+  } else if (args[i] === "--debug-context") {
     debugContext = true;
-  } else if (args[i] === "--dry-run" || args[i] === "--preview") {
+  } else if (args[i] === "--dry-run") {
     dryRun = true;
   } else if (args[i] === "--progress") {
     progress = true;
@@ -214,7 +184,7 @@ for (let i = 0; i < args.length; i++) {
     progress = true;
   } else if (args[i] === "--think") {
     think = true;
-  } else if (args[i] === "-y" || args[i] === "--yes" || args[i] === "--auto") {
+  } else if (args[i] === "-y" || args[i] === "--yes") {
     yes = true;
   }
 }
@@ -342,6 +312,7 @@ Additional workflow rules:
 - Generate commit message and label variants only.
 - Developer Context (-m) is the primary intent source when present.
 - Without Developer Context, use git diff as the commit message source.
+- If no Ticket is provided, the commit message must not start with [TICKET] or any bracketed ticket prefix.
 - Do not use full JIRA ticket context for commit wording.
 - Override the guide output rule for this CLI run: return 4 variants, not 1 commit.
 
@@ -640,19 +611,19 @@ ${promptDiff}
 ` : ""}
 Output exactly:
 Variant 1:
-Commit: [commit message]
+Commit: <commit message>
 Labels: [label1,label2]
 
 Variant 2:
-Commit: [commit message]
+Commit: <commit message>
 Labels: [label1,label2]
 
 Variant 3:
-Commit: [commit message]
+Commit: <commit message>
 Labels: [label1,label2]
 
 Variant 4:
-Commit: [commit message]
+Commit: <commit message>
 Labels: [label1,label2]
 `;
 }
@@ -690,8 +661,10 @@ function parseCommitVariants(outputText) {
     const commitMatch = variant.match(/Commit:\s*(.+)/i);
     const labelsMatch = variant.match(/Labels:\s*(.+)/i);
     if (commitMatch) {
+      const commit = normalizeGeneratedCommitMessage(commitMatch[1]);
+      if (!commit) continue;
       results.push({
-        commit: commitMatch[1].trim(),
+        commit,
         labels: applyJiraIssueTypeLabel(labelsMatch ? labelsMatch[1] : ""),
       });
     }
@@ -739,7 +712,7 @@ function parseJsonCommitVariants(outputText) {
 
     return parsed
       .map((item) => ({
-        commit: String(item?.commit || "").trim(),
+        commit: normalizeGeneratedCommitMessage(item?.commit),
         labels: String(item?.labels || "")
           .split(",")
           .map(label => label.trim())
@@ -780,6 +753,20 @@ ${promptDiff}
 `;
 }
 
+function normalizeGeneratedCommitMessage(rawCommit) {
+  let commit = String(rawCommit || "").trim();
+  if (!commit) return "";
+
+  if (ticketNumber) {
+    return commit.replace(/^\[TICKET\]\s*/i, `[${ticketNumber}] `).trim();
+  }
+
+  return commit
+    .replace(/^\[TICKET\]\s*/i, "")
+    .replace(/^\[[A-Z][A-Z0-9]+-\d+\]\s*/i, "")
+    .trim();
+}
+
 function buildCommitRecoveryPrompt() {
   const {
     trimmedDeveloperMessage,
@@ -791,6 +778,7 @@ function buildCommitRecoveryPrompt() {
   return `
 Return ONLY valid JSON. No markdown.
 Generate exactly 4 objects in an array with keys: commit, labels.
+${ticketNumber ? `Every commit must start with [${ticketNumber}].` : "Do not include [TICKET] or any bracketed ticket prefix in commits."}
 
 JSON schema:
 [{"commit":"...","labels":"label1,label2"}]

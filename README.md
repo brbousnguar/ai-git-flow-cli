@@ -129,13 +129,11 @@ Runtime options are supported by both `ai-commit` and `ai-release`:
 
 - `--provider <cloud|ollama-auto|local-ollama|hosted-ollama>`: override `config.json` provider selection
 - `--cloud`: use OpenAI cloud for this run
-- `--ollama-auto, --ollama-fallback`: use configured Ollama endpoints and fallback order, for example Mac Mini first and this machine second
-- `--local-ollama, --localhost-ollama`: use only this machine's localhost Ollama endpoint, skipping Mac Mini
-- `--hosted-ollama, --hosted`: use only non-localhost Ollama endpoints from `local.endpoints`
+- `--ollama-auto`: use configured Ollama endpoints and fallback order, for example Mac Mini first and this machine second
+- `--local-ollama`: use only this machine's localhost Ollama endpoint, skipping Mac Mini
+- `--hosted-ollama`: use only non-localhost Ollama endpoints from `local.endpoints`
 - `--model <name>`: override the configured model for this run
 - `--ollama-url <url>`: use one explicit Ollama-compatible `/v1` base URL for this run
-
-Compatibility aliases are still supported: `--local` means `--ollama-auto`, and `--pure-local` means `--local-ollama`.
 
 ## ai-commit
 
@@ -171,15 +169,13 @@ Options:
 - `-m, --message <text>`: context for branch naming and commit message generation
 - `-l, --labels <labels>`: comma-separated GitHub labels
 - `-n, --exclude-label <label>`: exclude a label from suggestions and PR creation
-- `--exclude-labels <label>`: alias of `--exclude-label`
-- `-bug`, `-documentation`, `-enhancement`: shorthand exclusion flags
 - `-d, --debug`: print LLM request details
 - `--debug-context`: print context windows used for generation
-- `--dry-run, --preview`: generate and select branch/commit values without renaming the branch, committing, pushing, or creating a PR
+- `--dry-run`: generate and select branch/commit values without renaming the branch, committing, pushing, or creating a PR
 - `--progress`: print heartbeat messages while waiting for local model calls
 - `--stream`: stream raw local Ollama output tokens while they are generated; also enables `--progress`
 - `--think`: enable local Ollama thinking mode; by default the CLI disables thinking for faster structured branch and commit generation
-- `-y, --yes, --auto`: non-interactive mode; choose variant 1 for the branch and commit message
+- `-y, --yes`: non-interactive mode; choose variant 1 for the branch and commit message
 
 When `-m, --message` is provided, that developer context is treated as the highest-priority intent. JIRA and diff context are skipped for generation so naming and commit wording stay aligned with the supplied message.
 
@@ -217,6 +213,18 @@ The script auto-detects:
 It fetches remotes, summarizes commit messages grouped by ticket ID, then can create the release PR through GitHub CLI.
 
 Use `-d, --debug` to print release LLM request details.
+
+## Automatic GitHub Releases
+
+When a pull request from `develop` into `main` is merged, GitHub Actions creates the next patch tag and a GitHub Release with generated release notes.
+
+Examples:
+
+- No existing tags: creates `v1.0.0`
+- Latest tag `v1.0.0`: creates `v1.0.1`
+- Latest tag `v1.2.9`: creates `v1.2.10`
+
+The workflow can also be run manually from the GitHub Actions tab.
 
 ## Requirements
 

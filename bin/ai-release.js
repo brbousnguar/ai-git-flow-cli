@@ -252,17 +252,20 @@ function buildTicketCommitContext(rawCommitLog) {
 }
 
 function buildReleasePrompt() {
+  const hasTicketContext = Boolean(ticketCommitContext);
+  const noteFormat = hasTicketContext
+    ? "[Use valid markdown with one bullet per ticket]\n[Preferred line format: - [TICKET-123] concise user-facing summary]\n[If same ticket has multiple commit intents, merge them into one sentence]"
+    : "[Use valid markdown with one bullet per release change]\n[Do not invent ticket IDs]\n[Do not use bracketed ticket prefixes like [AI-101], [TICKET-123], or [SFSC-1234]]";
+
   return `
 Generate concise Release Notes for merging ${devBranch} into ${prodBranch}, and suggest appropriate GitHub labels.
 
 IMPORTANT: Output ONLY the Release Notes section followed by Labels. Do NOT include a PR Title line.
-PRIMARY GOAL: Group notes by JIRA ticket and consolidate multiple commits for the same ticket into one bullet.
+PRIMARY GOAL: ${hasTicketContext ? "Group notes by JIRA ticket and consolidate multiple commits for the same ticket into one bullet." : "Summarize the release changes without ticket prefixes because no JIRA ticket IDs were found."}
 
 Output format:
 **Release Notes:**
-[Use valid markdown with one bullet per ticket]
-[Preferred line format: - [TICKET-123] concise user-facing summary]
-[If same ticket has multiple commit intents, merge them into one sentence]
+${noteFormat}
 [NO code references, file names, or technical details]
 [NO backticks or code formatting]
 [Be brief and user-facing]
@@ -276,8 +279,7 @@ Output format:
 
 Example good format:
 **Release Notes:**
-- [SFSC-1638] Added quote update flow and improved listener behavior
-- [SFSC-1734] Fixed pivot mapping for currency values
+${hasTicketContext ? "- [SFSC-1638] Added quote update flow and improved listener behavior\n- [SFSC-1734] Fixed pivot mapping for currency values" : "- Improved commit message formatting by removing placeholder ticket prefixes\n- Simplified command option handling for the CLI"}
 
 **Labels:** enhancement,bug
 
@@ -292,8 +294,21 @@ ${ticketCommitContext || "(none)"}
 `;
 }
 
+function removeInventedTicketPrefixes(text) {
+  if (ticketCommitContext) return text;
+
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^(\s*[-*]\s*)\[[A-Z][A-Z0-9]+-\d+\]\s+/i, "$1"))
+    .join("\n");
+}
+
+function sanitizeReleaseOutput(rawOutput) {
+  return removeInventedTicketPrefixes(String(rawOutput || "").trim());
+}
+
 function extractApprovedReleaseNotes(rawOutput) {
-  const text = String(rawOutput || "").trim();
+  const text = sanitizeReleaseOutput(rawOutput);
   if (!text) return "";
   const noteOnly = text.split(/\*\*Labels:\*\*/i)[0].trim();
   if (!noteOnly) return "";
@@ -321,7 +336,7 @@ async function generatePRDetails(variantNumber = 1) {
 
   printTokenUsage(result.usage, { provider, modelName, config });
 
-  return result.text;
+  return sanitizeReleaseOutput(result.text);
 }
 
 async function askQuestion(query) {
