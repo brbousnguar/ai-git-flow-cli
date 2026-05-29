@@ -1,6 +1,6 @@
 # AI Local Git Flow
 
-CLI tools for AI-assisted Git workflows in Git Bash.
+CLI tools for AI-assisted Git workflows in Git Bash and PowerShell.
 
 ## Commands
 
@@ -21,6 +21,34 @@ You can also run the tools from this repository:
 
 ```bash
 npm run ai-commit --
+npm run ai-release --
+```
+
+## PowerShell setup
+
+From this repository, register the local CLI package once:
+
+```powershell
+npm link
+```
+
+This creates `ai-commit.ps1` and `ai-release.ps1` shims in your npm user command folder, for example:
+
+```powershell
+C:\Users\<you>\AppData\Roaming\npm
+```
+
+Make sure that folder is on your PowerShell `PATH`, then restart PowerShell or open a new terminal. After that, run the commands from any Git repository:
+
+```powershell
+ai-commit --yes -t SFSC-1573 -m "implement SSO authentication"
+ai-release
+```
+
+If your execution policy blocks npm `.ps1` shims, run the CLI through npm from this repo instead:
+
+```powershell
+npm run ai-commit -- --yes -t SFSC-1573 -m "implement SSO authentication"
 npm run ai-release --
 ```
 
