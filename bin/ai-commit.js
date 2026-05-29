@@ -165,47 +165,17 @@ for (let i = 0; i < args.length; i++) {
   } else if ((args[i] === "-l" || args[i] === "--labels") && args[i + 1]) {
     labels = normalizeLabels(args[i + 1]);
     i++;
-  } else if ((args[i] === "-n" || args[i] === "--exclude-label" || args[i] === "--exclude-labels") && args[i + 1]) {
+  } else if ((args[i] === "-n" || args[i] === "--exclude-label") && args[i + 1]) {
     const excluded = normalizeLabelName(args[i + 1]);
     if (ALLOWED_LABELS.has(excluded)) {
       excludedLabels.add(excluded);
     }
     i++;
-  } else if (
-    /^-[a-z][a-z-]*$/i.test(args[i]) &&
-    ![
-      "-t",
-      "--ticket",
-      "-m",
-      "--message",
-      "-l",
-      "--labels",
-      "-d",
-      "--debug",
-      "--debug-context",
-      "--debug-windows",
-      "--dry-run",
-      "--progress",
-      "--stream",
-      "--think",
-      "-y",
-      "--yes",
-      "--auto",
-      "-n",
-      "--exclude-label",
-      "--exclude-labels",
-    ].includes(args[i])
-  ) {
-    // Shorthand negative labels: -bug, -documentation, -enhancement, etc.
-    const excluded = normalizeLabelName(args[i]);
-    if (ALLOWED_LABELS.has(excluded)) {
-      excludedLabels.add(excluded);
-    }
   } else if (args[i] === "-d" || args[i] === "--debug") {
     debug = true;
-  } else if (args[i] === "--debug-context" || args[i] === "--debug-windows") {
+  } else if (args[i] === "--debug-context") {
     debugContext = true;
-  } else if (args[i] === "--dry-run" || args[i] === "--preview") {
+  } else if (args[i] === "--dry-run") {
     dryRun = true;
   } else if (args[i] === "--progress") {
     progress = true;
@@ -214,7 +184,7 @@ for (let i = 0; i < args.length; i++) {
     progress = true;
   } else if (args[i] === "--think") {
     think = true;
-  } else if (args[i] === "-y" || args[i] === "--yes" || args[i] === "--auto") {
+  } else if (args[i] === "-y" || args[i] === "--yes") {
     yes = true;
   }
 }
