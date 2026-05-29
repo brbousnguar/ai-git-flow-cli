@@ -312,6 +312,7 @@ Additional workflow rules:
 - Generate commit message and label variants only.
 - Developer Context (-m) is the primary intent source when present.
 - Without Developer Context, use git diff as the commit message source.
+- If no Ticket is provided, the commit message must not start with [TICKET] or any bracketed ticket prefix.
 - Do not use full JIRA ticket context for commit wording.
 - Override the guide output rule for this CLI run: return 4 variants, not 1 commit.
 
@@ -610,19 +611,19 @@ ${promptDiff}
 ` : ""}
 Output exactly:
 Variant 1:
-Commit: [commit message]
+Commit: <commit message>
 Labels: [label1,label2]
 
 Variant 2:
-Commit: [commit message]
+Commit: <commit message>
 Labels: [label1,label2]
 
 Variant 3:
-Commit: [commit message]
+Commit: <commit message>
 Labels: [label1,label2]
 
 Variant 4:
-Commit: [commit message]
+Commit: <commit message>
 Labels: [label1,label2]
 `;
 }
@@ -660,8 +661,10 @@ function parseCommitVariants(outputText) {
     const commitMatch = variant.match(/Commit:\s*(.+)/i);
     const labelsMatch = variant.match(/Labels:\s*(.+)/i);
     if (commitMatch) {
+      const commit = normalizeGeneratedCommitMessage(commitMatch[1]);
+      if (!commit) continue;
       results.push({
-        commit: commitMatch[1].trim(),
+        commit,
         labels: applyJiraIssueTypeLabel(labelsMatch ? labelsMatch[1] : ""),
       });
     }
@@ -709,7 +712,7 @@ function parseJsonCommitVariants(outputText) {
 
     return parsed
       .map((item) => ({
-        commit: String(item?.commit || "").trim(),
+        commit: normalizeGeneratedCommitMessage(item?.commit),
         labels: String(item?.labels || "")
           .split(",")
           .map(label => label.trim())
@@ -750,6 +753,20 @@ ${promptDiff}
 `;
 }
 
+function normalizeGeneratedCommitMessage(rawCommit) {
+  let commit = String(rawCommit || "").trim();
+  if (!commit) return "";
+
+  if (ticketNumber) {
+    return commit.replace(/^\[TICKET\]\s*/i, `[${ticketNumber}] `).trim();
+  }
+
+  return commit
+    .replace(/^\[TICKET\]\s*/i, "")
+    .replace(/^\[[A-Z][A-Z0-9]+-\d+\]\s*/i, "")
+    .trim();
+}
+
 function buildCommitRecoveryPrompt() {
   const {
     trimmedDeveloperMessage,
@@ -761,6 +778,7 @@ function buildCommitRecoveryPrompt() {
   return `
 Return ONLY valid JSON. No markdown.
 Generate exactly 4 objects in an array with keys: commit, labels.
+${ticketNumber ? `Every commit must start with [${ticketNumber}].` : "Do not include [TICKET] or any bracketed ticket prefix in commits."}
 
 JSON schema:
 [{"commit":"...","labels":"label1,label2"}]

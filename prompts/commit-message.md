@@ -16,6 +16,8 @@ Without ticket:
 <type>(<scope>): <summary>
 ```
 
+Never use `[TICKET]` as a placeholder. If no ticket is provided, omit the bracketed ticket prefix entirely.
+
 If no clear scope exists, omit it:
 
 ```text
